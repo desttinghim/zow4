@@ -57,6 +57,8 @@ const externWasm4 = struct {
     pub const MOUSE_BUTTONS: *const u8 = @intToPtr(*const u8, 0x1e);
     pub const SYSTEM_FLAGS: *u8 = @intToPtr(*u8, 0x1f);
     pub const FRAMEBUFFER: *[6400]u8 = @intToPtr(*[6400]u8, 0xA0);
+    /// INCLUDES STACK! A slice pointing to all available program memory
+    pub const PROGRAM_MEMORY: [58975]u8 = @intToPtr(&[58975]u8, 0x19A0);
 
     // ┌───────────────────────────────────────────────────────────────────────────┐
     // │                                                                           │

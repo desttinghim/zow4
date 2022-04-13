@@ -1,11 +1,8 @@
 //! # Input
 //! This is an input library for WASM4.
-//! Gamepad functions:
-//! btn, btnp, btnr
-//! Mouse Functions
-//! mouse, mousep, mouser, mousepos
-const Input = @This();
 test "usage" {
+    // Import this file as a namespace
+    const Input = @This();
     // In loop
     if (Input.btnp(.one, .left)) {
         // gamepad 1, left button just pressed
