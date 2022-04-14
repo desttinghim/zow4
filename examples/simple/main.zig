@@ -2,25 +2,32 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
 const geom = zow4.geometry;
+const color = zow4.draw.color;
 
-const Element = zow4.ui.Element;
+const Sprite = zow4.ui.Sprite;
+const Panel = zow4.ui.Panel;
+const Stage = zow4.ui.Stage;
 
 const bubbles_bmp = zow4.draw.bmpToBlit(@embedFile("bubbles.bmp")) catch |e| @compileLog("Hey", e);
 
 var fba: std.heap.FixedBufferAllocator = undefined;
 var alloc: std.mem.Allocator = undefined;
-var bubbles: zow4.draw.Sprite = undefined;
-var stage: zow4.ui.Element = undefined;
+var bubbles: *Sprite = undefined;
+var stage: *Stage = undefined;
 
 export fn start() void {
     fba = zow4.heap.init();
     alloc = fba.allocator();
-    bubbles = zow4.draw.Sprite.init(&bubbles_bmp, geom.Vec2{ 60, 60 });
+    // bubbles = Sprite.init(&bubbles_bmp, geom.Vec2{ 60, 60 });
 
-    stage = Element.stage();
-    var panel = alloc.create(Element) catch @panic("creating element");
-    panel.* = Element.panel(zow4.draw.color.select(.Light, .Dark), geom.AABB.init(20, 20, 16, 16));
-    stage.appendChild(panel);
+    stage = Stage.new(alloc) catch @panic("creating stage");
+
+    var panel = Panel.new(alloc, color.select(.Light, .Dark), geom.AABB.init(60, 60, 32, 32)) catch @panic("creating element");
+    bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, geom.Vec2{ 0, 0 }, null) catch @panic("sprite");
+    panel.element.appendChild(&bubbles.element);
+    stage.element.appendChild(&panel.element);
+
+    // stage.element.appendChild(&bubbles.element);
 }
 
 export fn update() void {
@@ -33,7 +40,7 @@ export fn update() void {
         w4.DRAW_COLORS.* = 4;
     }
 
-    bubbles.blit();
+    // bubbles.blit();
     w4.text("Press X to blink", 16, 90);
 
     w4.DRAW_COLORS.* = 1;
@@ -45,5 +52,5 @@ export fn update() void {
     w4.DRAW_COLORS.* = 4;
     w4.rect(0, 48, 16, 16);
 
-    stage.render(null);
+    stage.render();
 }

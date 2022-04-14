@@ -33,37 +33,37 @@ pub const color = struct {
     }
 };
 
-pub const Sprite = struct {
-    bmp: *const Blit,
-    pos: geom.Vec2,
-    rect: union(enum) { full, aabb: geom.AABB },
-    flags: BlitFlags,
+// pub const Sprite = struct {
+//     bmp: *const Blit,
+//     pos: geom.Vec2,
+//     rect: union(enum) { full, aabb: geom.AABB },
+//     flags: BlitFlags,
 
-    pub fn init(bmp: *const Blit, pos: geom.Vec2) @This() {
-        return @This(){
-            .bmp = bmp,
-            .pos = pos,
-            .rect = .full,
-            .flags = .{ .bpp = .b1 },
-        };
-    }
+//     pub fn init(bmp: *const Blit, pos: geom.Vec2) @This() {
+//         return @This(){
+//             .bmp = bmp,
+//             .pos = pos,
+//             .rect = .full,
+//             .flags = .{ .bpp = .b1 },
+//         };
+//     }
 
-    pub fn init_sub(bmp: *const Blit, pos: geom.Vec2, rect: geom.AABB) @This() {
-        return @This(){
-            .bmp = bmp,
-            .pos = pos,
-            .rect = .{ .aabb = rect },
-            .flags = .{ .bpp = .b1 },
-        };
-    }
+//     pub fn init_sub(bmp: *const Blit, pos: geom.Vec2, rect: geom.AABB) @This() {
+//         return @This(){
+//             .bmp = bmp,
+//             .pos = pos,
+//             .rect = .{ .aabb = rect },
+//             .flags = .{ .bpp = .b1 },
+//         };
+//     }
 
-    pub fn blit(this: @This()) void {
-        switch (this.rect) {
-            .full => this.bmp.blit(this.pos, this.flags),
-            .aabb => |aabb| this.bmp.blitSub(this.pos, aabb, this.flags),
-        }
-    }
-};
+//     pub fn blit(this: @This()) void {
+//         switch (this.rect) {
+//             .full => this.bmp.blit(this.pos, this.flags),
+//             .aabb => |aabb| this.bmp.blitSub(this.pos, aabb, this.flags),
+//         }
+//     }
+// };
 
 pub const Blit = struct {
     data: [*]const u8,
