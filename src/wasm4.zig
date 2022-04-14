@@ -70,7 +70,7 @@ const externWasm4 = struct {
     pub extern fn blit(sprite: [*]const u8, x: i32, y: i32, width: i32, height: i32, flags: u32) void;
 
     /// Copies a subregion within a larger sprite atlas to the framebuffer.
-    pub extern fn blitSub(sprite: [*]const u8, x: i32, y: i32, width: i32, height: i32, src_x: u32, src_y: u32, strie: i32, flags: u32) void;
+    pub extern fn blitSub(sprite: [*]const u8, x: i32, y: i32, width: i32, height: i32, src_x: u32, src_y: u32, stride: i32, flags: u32) void;
 
     /// Draws a line between two points.
     pub extern fn line(x1: i32, y1: i32, x2: i32, y2: i32) void;

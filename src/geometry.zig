@@ -50,6 +50,22 @@ pub fn vec2fToVec2(vec2f: Vec2f) Vec2 {
 }
 
 pub const AABB = struct {
+    pos: Vec2,
+    size: Vec2,
+
+    pub fn addv(this: @This(), vec2: Vec2) @This() {
+        return @This(){ .pos = this.pos + vec2, .size = this.size };
+    }
+
+    pub fn overlaps(a: @This(), b: @This()) bool {
+        return a.pos[0] < b.pos[0] + b.size[0] and
+            a.pos[0] + a.size[0] > b.pos[0] and
+            a.pos[1] < b.pos[1] + b.size[1] and
+            a.pos[1] + a.size[1] > b.pos[1];
+    }
+};
+
+pub const AABBf = struct {
     pos: Vec2f,
     size: Vec2f,
 
