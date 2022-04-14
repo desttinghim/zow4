@@ -65,6 +65,21 @@ const ElementIface = struct {
         }
     }
 
+    const Self = @This();
+    pub const ChildIter = struct {
+        child_opt: ?*Self,
+        pub fn next(this: @This()) ?*Self {
+            if (this.child_opt) |child| {
+                this.child_opt = this.child_opt.next;
+                return child;
+            }
+            return null;
+        }
+    };
+    pub fn childIter(this: *@This()) ChildIter {
+        return .{ .child_opt = this.child };
+    }
+
     pub fn getChild(this: *@This(), num: usize) ?*@This() {
         var i: usize = 0;
         var child_opt = this.child;
@@ -131,6 +146,73 @@ pub const Stage = struct {
 
     fn sizeFn(_: *anyopaque) geom.AABB {
         return geom.AABB.init(0, 0, 160, 160);
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.alloc.destroy(this);
+    }
+
+    fn renderFn(_: *anyopaque) void {}
+};
+
+pub const VList = struct {
+    alloc: std.mem.Allocator,
+    element: ElementIface,
+
+    pub fn new(alloc: std.mem.Allocator) !*@This() {
+        const this = try alloc.create(@This());
+        this.* = @This(){
+            .alloc = alloc,
+            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+        };
+        return this;
+    }
+
+    fn layoutFn(ptr: *anyopaque, childID: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        const vsize = @divTrunc(this.element.bounds.size[v.y], @intCast(i32, this.element.children));
+        return geom.AABB.initv(
+            this.element.bounds.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
+            geom.Vec2{ this.element.bounds.size[v.x], vsize },
+        );
+    }
+
+    fn sizeFn(ptr: *anyopaque) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.bounds;
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.alloc.destroy(this);
+    }
+
+    fn renderFn(_: *anyopaque) void {}
+};
+
+pub const Float = struct {
+    alloc: std.mem.Allocator,
+    element: ElementIface,
+
+    pub fn new(alloc: std.mem.Allocator, rect: geom.AABB) !*@This() {
+        const this = try alloc.create(@This());
+        this.* = @This(){
+            .alloc = alloc,
+            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+        };
+        this.element.size = rect;
+        return this;
+    }
+
+    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.size;
+    }
+
+    fn sizeFn(ptr: *anyopaque) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.size;
     }
 
     fn deleteFn(ptr: *anyopaque) void {

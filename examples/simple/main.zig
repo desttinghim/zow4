@@ -22,11 +22,23 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    var anchor = ui.AnchorElement.new(alloc, ui.Anchor.init(10, 10, -10, -10)) catch @panic("creating anchorEl");
-    stage.element.appendChild(&anchor.element);
+    var float = ui.Float.new(alloc, geom.AABB.init(10, 10, 80, 80)) catch @panic("creating anchorEl");
+    stage.element.appendChild(&float.element);
 
     var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
-    anchor.element.appendChild(&panel.element);
+    float.element.appendChild(&panel.element);
+
+    // var vlist = ui.VList.new(alloc) catch @panic("vlist");
+    // panel.element.appendChild(&vlist.element);
+
+    // var c1 = Panel.new(alloc, color.select(.Light, .Transparent)) catch @panic("c1");
+    // var c2 = Panel.new(alloc, color.select(.Midtone1, .Transparent)) catch @panic("c2");
+    // var c3 = Panel.new(alloc, color.select(.Midtone2, .Transparent)) catch @panic("c3");
+    // var c4 = Panel.new(alloc, color.select(.Dark, .Transparent)) catch @panic("c4");
+    // vlist.element.appendChild(&c1.element);
+    // vlist.element.appendChild(&c2.element);
+    // vlist.element.appendChild(&c3.element);
+    // vlist.element.appendChild(&c4.element);
 
     var center = ui.Center.new(alloc) catch @panic("creating center element");
     panel.element.appendChild(&center.element);
@@ -37,34 +49,22 @@ export fn start() void {
     center.element.appendChild(&bubbles.element);
 
     stage.layout();
-
-    w4.tracef("anchor - %d %d %d %d", anchor.element.size.pos[0], anchor.element.size.pos[1], anchor.element.size.size[0], anchor.element.size.size[1]);
-    w4.tracef("panel - %d %d %d %d", panel.element.size.pos[0], panel.element.size.pos[1], panel.element.size.size[0], panel.element.size.size[1]);
-    w4.tracef("center - %d %d %d %d", center.element.size.pos[0], center.element.size.pos[1], center.element.size.size[0], center.element.size.size[1]);
-    w4.tracef("bubbles - %d %d %d %d", bubbles.element.size.pos[0], bubbles.element.size.pos[1], bubbles.element.size.size[0], bubbles.element.size.size[1]);
 }
 
 export fn update() void {
+    stage.render();
+
     w4.DRAW_COLORS.* = 2;
 
-    w4.text("Hello from ZOW4!", 10, 18);
+    const free = fba.buffer.len - fba.end_index;
+    const msg = std.fmt.allocPrintZ(alloc, "{} bytes free\nof {} bytes", .{ free, fba.buffer.len }) catch @panic("msg");
+    defer alloc.free(msg);
+    w4.text(msg.ptr, 10, 18);
 
     const gamepad = w4.GAMEPAD1.*;
     if (gamepad & w4.BUTTON_1 != 0) {
         w4.DRAW_COLORS.* = 4;
     }
 
-    // bubbles.blit();
     w4.text("Press X to blink", 16, 90);
-
-    w4.DRAW_COLORS.* = 1;
-    w4.rect(0, 0, 16, 16);
-    w4.DRAW_COLORS.* = 2;
-    w4.rect(0, 16, 16, 16);
-    w4.DRAW_COLORS.* = 3;
-    w4.rect(0, 32, 16, 16);
-    w4.DRAW_COLORS.* = 4;
-    w4.rect(0, 48, 16, 16);
-
-    stage.render();
 }
