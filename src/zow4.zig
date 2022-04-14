@@ -8,6 +8,7 @@
 //!
 //! ZOW4: Zig On WASM4
 
-pub usingnamespace @import("wasm4");
-pub usingnamespace @import("input.zig");
-pub usingnamespace @import("heap.zig");
+pub const input = @import("input.zig");
+pub const heap = @import("heap.zig");
+pub const geometry = @import("geometry.zig");
+pub const draw = @import("draw.zig");

@@ -58,7 +58,7 @@ const externWasm4 = struct {
     pub const SYSTEM_FLAGS: *u8 = @intToPtr(*u8, 0x1f);
     pub const FRAMEBUFFER: *[6400]u8 = @intToPtr(*[6400]u8, 0xA0);
     /// INCLUDES STACK! A slice pointing to all available program memory
-    pub const PROGRAM_MEMORY: [58975]u8 = @intToPtr(&[58975]u8, 0x19A0);
+    pub const PROGRAM_MEMORY: *[58975]u8 = @intToPtr(*[58975]u8, 0x19A0);
 
     // ┌───────────────────────────────────────────────────────────────────────────┐
     // │                                                                           │
@@ -83,6 +83,8 @@ const externWasm4 = struct {
 
     /// Draws text using the built-in system font.
     pub extern fn text(str: [*]const u8, x: i32, y: i32) void;
+
+    pub extern fn textUtf8(strPtr: [*]const u8, strLen: usize, x: i32, y: i32) void;
 
     /// Draws a vertical line
     pub extern fn vline(x: i32, y: i32, len: u32) void;
