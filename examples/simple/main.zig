@@ -22,12 +22,11 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    var panel = Panel.new(alloc, color.select(.Light, .Dark), geom.AABB.init(60, 60, 32, 32)) catch @panic("creating element");
-    bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, geom.Vec2{ 0, 0 }, null) catch @panic("sprite");
+    var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
+    panel.rect.pos = geom.Vec2{ 60, 60 };
+    bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, null) catch @panic("sprite");
     panel.element.appendChild(&bubbles.element);
     stage.element.appendChild(&panel.element);
-
-    // stage.element.appendChild(&bubbles.element);
 }
 
 export fn update() void {

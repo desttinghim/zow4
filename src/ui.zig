@@ -9,12 +9,28 @@ const BlitFlags = draw.BlitFlags;
 
 const ElementIface = struct {
     self: *anyopaque,
-    renderImpl: fn (*anyopaque, geom.Vec2) geom.Vec2,
-    deleteImpl: fn (*anyopaque) void,
+    bounds: geom.AABB,
+    sizeImpl: sizeFn,
+    renderImpl: renderFn,
+    deleteImpl: deleteFn,
     prev: ?*@This() = null,
     next: ?*@This() = null,
     parent: ?*@This() = null,
     child: ?*@This() = null,
+
+    const sizeFn = fn (*anyopaque, geom.AABB) geom.AABB;
+    const renderFn = fn (*anyopaque, geom.Vec2) geom.Vec2;
+    const deleteFn = fn (*anyopaque) void;
+
+    pub fn init(self: *anyopaque, sizeImpl: sizeFn, renderImpl: renderFn, deleteImpl: deleteFn) @This() {
+        return @This(){
+            .self = self,
+            .bounds = geom.AABB.init(0, 0, 160, 160),
+            .sizeImpl = sizeImpl,
+            .renderImpl = renderImpl,
+            .deleteImpl = deleteImpl,
+        };
+    }
 
     pub fn remove(this: *@This()) void {
         if (this.child) |child| child.remove();
@@ -24,6 +40,7 @@ const ElementIface = struct {
 
     pub fn appendChild(this: *@This(), el: *@This()) void {
         el.parent = this;
+        _ = el.sizeImpl(this.self, this.bounds);
         if (this.child) |child| {
             child.append(el);
         } else {
@@ -59,9 +76,13 @@ pub const Stage = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = .{ .self = this, .deleteImpl = deleteImpl, .renderImpl = renderImpl },
+            .element = ElementIface.init(this, sizeImpl, renderImpl, deleteImpl),
         };
         return this;
+    }
+
+    pub fn sizeImpl(_: *anyopaque, _: geom.AABB) geom.AABB {
+        return geom.AABB.init(0, 0, 160, 160);
     }
 
     pub fn deleteImpl(ptr: *anyopaque) void {
@@ -80,15 +101,22 @@ pub const Panel = struct {
     style: u16,
     rect: geom.AABB,
 
-    pub fn new(alloc: std.mem.Allocator, style: u16, rect: geom.AABB) !*@This() {
+    pub fn new(alloc: std.mem.Allocator, style: u16) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = .{ .self = this, .renderImpl = renderImpl, .deleteImpl = deleteImpl },
+            .element = ElementIface.init(this, sizeImpl, renderImpl, deleteImpl),
             .style = style,
-            .rect = rect,
+            .rect = geom.AABB.init(0, 0, 160, 160),
         };
         return this;
+    }
+
+    pub fn sizeImpl(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
+        // const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        // this.rect = bounds;
+        _ = ptr;
+        return bounds;
     }
 
     pub fn deleteImpl(ptr: *anyopaque) void {
@@ -114,14 +142,14 @@ pub const Sprite = struct {
     flags: BlitFlags,
     style: u16,
 
-    pub fn new(alloc: std.mem.Allocator, style: u16, bmp: *const Blit, pos: geom.Vec2, rect: ?geom.AABB) !*@This() {
+    pub fn new(alloc: std.mem.Allocator, style: u16, bmp: *const Blit, src: ?geom.AABB) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = .{ .self = this, .renderImpl = renderImpl, .deleteImpl = deleteImpl },
+            .element = ElementIface.init(this, sizeImpl, renderImpl, deleteImpl),
             .bmp = bmp,
-            .pos = pos,
-            .rect = if (rect) |r| .{ .aabb = r } else .full,
+            .pos = geom.Vec2{ 0, 0 },
+            .rect = if (src) |r| .{ .aabb = r } else .full,
             .flags = .{ .bpp = .b1 },
             .style = style,
         };
@@ -131,6 +159,17 @@ pub const Sprite = struct {
     pub fn deleteImpl(ptr: *anyopaque) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         this.alloc.destroy(this);
+    }
+
+    pub fn sizeImpl(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
+        // const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        _ = ptr;
+        return bounds;
+        // this.pos = bounds.pos;
+        // return switch (this.rect) {
+        //     .full => geom.AABB.init(bounds.pos[v.x], bounds.pos[v.y], this.bmp.width, this.bmp.height),
+        //     .aabb => |aabb| geom.AABB.init(bounds.pos[v.x], bounds.pos[v.y], aabb.size[v.x], aabb.size[v.y]),
+        // };
     }
 
     fn renderImpl(ptr: *anyopaque, offset: geom.Vec2) geom.Vec2 {
