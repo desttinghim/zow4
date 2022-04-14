@@ -8,6 +8,8 @@ pub const Vec = struct {
     pub const y = 1;
 };
 
+const v = Vec;
+
 // pub const Vec = struct {
 //     pub const x = 0;
 //     pub const y = 1;
@@ -52,6 +54,25 @@ pub fn vec2fToVec2(vec2f: Vec2f) Vec2 {
 pub const AABB = struct {
     pos: Vec2,
     size: Vec2,
+
+    pub fn top(this: @This()) i32 {
+        return this.pos[v.y];
+    }
+    pub fn left(this: @This()) i32 {
+        return this.pos[v.x];
+    }
+    pub fn top_left(this: @This()) Vec2 {
+        return this.pos;
+    }
+    pub fn right(this: @This()) i32 {
+        return this.pos[v.x] + this.size[v.x];
+    }
+    pub fn bottom(this: @This()) i32 {
+        return this.pos[v.y] + this.size[v.y];
+    }
+    pub fn bottom_right(this: @This()) Vec2 {
+        return this.pos + this.size;
+    }
 
     pub fn init(x: i32, y: i32, w: i32, h: i32) @This() {
         return @This(){

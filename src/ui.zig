@@ -10,37 +10,58 @@ const BlitFlags = draw.BlitFlags;
 const ElementIface = struct {
     self: *anyopaque,
     bounds: geom.AABB,
-    sizeImpl: sizeFn,
-    renderImpl: renderFn,
-    deleteImpl: deleteFn,
+    children: usize = 0,
     prev: ?*@This() = null,
     next: ?*@This() = null,
     parent: ?*@This() = null,
     child: ?*@This() = null,
+    // Function Pointers
+    sizeFn: SizeFn,
+    layoutFn: LayoutFn,
+    renderFn: RenderFn,
+    deleteFn: DeleteFn,
 
-    const sizeFn = fn (*anyopaque, geom.AABB) geom.AABB;
-    const renderFn = fn (*anyopaque, geom.Vec2) geom.Vec2;
-    const deleteFn = fn (*anyopaque) void;
+    /// Passed self, bounding box, and returns a size
+    const SizeFn = fn (*anyopaque, geom.AABB) geom.AABB;
+    /// Passed self number of children, and child number, returns bounds to be passed to size
+    const LayoutFn = fn (*anyopaque, usize) geom.AABB;
+    /// Draws element to the screen
+    const RenderFn = fn (*anyopaque, geom.Vec2) geom.Vec2;
+    /// Frees element from memory
+    const DeleteFn = fn (*anyopaque) void;
 
-    pub fn init(self: *anyopaque, sizeImpl: sizeFn, renderImpl: renderFn, deleteImpl: deleteFn) @This() {
+    pub fn init(self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: RenderFn, deleteFn: DeleteFn) @This() {
         return @This(){
             .self = self,
             .bounds = geom.AABB.init(0, 0, 160, 160),
-            .sizeImpl = sizeImpl,
-            .renderImpl = renderImpl,
-            .deleteImpl = deleteImpl,
+            .sizeFn = sizeFn,
+            .layoutFn = layoutFn,
+            .renderFn = renderFn,
+            .deleteFn = deleteFn,
         };
     }
 
     pub fn remove(this: *@This()) void {
         if (this.child) |child| child.remove();
         if (this.prev) |prev| prev.next = this.next;
-        this.deleteImpl();
+        if (this.parent) |parent| parent.children -= 1;
+        this.deleteFn();
+    }
+
+    pub fn layout(this: *@This()) void {
+        var child_opt = this.child;
+        var i: usize = 0;
+        while (child_opt) |child| : (i += 1) {
+            child.layout();
+            const bounds = this.layoutFn(this.self, i);
+            _ = child.sizeFn(child.self, bounds);
+            child_opt = child.next;
+        }
     }
 
     pub fn appendChild(this: *@This(), el: *@This()) void {
         el.parent = this;
-        _ = el.sizeImpl(this.self, this.bounds);
+        this.children += 1;
         if (this.child) |child| {
             child.append(el);
         } else {
@@ -58,7 +79,7 @@ const ElementIface = struct {
     }
 
     pub fn render(this: @This(), offset: geom.Vec2) void {
-        const pos = this.renderImpl(this.self, offset);
+        const pos = this.renderFn(this.self, offset);
         if (this.child) |child| child.render(pos);
         if (this.next) |next| next.render(offset);
     }
@@ -72,26 +93,47 @@ pub const Stage = struct {
         this.element.render(geom.Vec2{ 0, 0 });
     }
 
+    pub fn layout(this: *@This()) void {
+        this.element.layout();
+    }
+
     pub fn new(alloc: std.mem.Allocator) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeImpl, renderImpl, deleteImpl),
+            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
         };
         return this;
     }
 
-    pub fn sizeImpl(_: *anyopaque, _: geom.AABB) geom.AABB {
+    /// Draws all children with no offset or constraints
+    fn layoutFn(_: *anyopaque, _: usize) geom.AABB {
         return geom.AABB.init(0, 0, 160, 160);
     }
 
-    pub fn deleteImpl(ptr: *anyopaque) void {
+    fn sizeFn(_: *anyopaque, _: geom.AABB) geom.AABB {
+        return geom.AABB.init(0, 0, 160, 160);
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         this.alloc.destroy(this);
     }
 
-    pub fn renderImpl(_: *anyopaque, _: geom.Vec2) geom.Vec2 {
+    fn renderFn(_: *anyopaque, _: geom.Vec2) geom.Vec2 {
         return geom.Vec2{ 0, 0 };
+    }
+};
+
+pub const Anchors = struct {
+    top_left: geom.Vec2,
+    bottom_right: geom.Vec2,
+
+    pub fn init(left: i32, top: i32, right: i32, bottom: i32) @This() {
+        return @This(){
+            .top_left = geom.Vec2{ left, top },
+            .bottom_right = geom.Vec2{ right, bottom },
+        };
     }
 };
 
@@ -99,32 +141,42 @@ pub const Panel = struct {
     alloc: std.mem.Allocator,
     element: ElementIface,
     style: u16,
+    anchors: Anchors,
     rect: geom.AABB,
 
-    pub fn new(alloc: std.mem.Allocator, style: u16) !*@This() {
+    pub fn new(alloc: std.mem.Allocator, style: u16, anchors: Anchors) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeImpl, renderImpl, deleteImpl),
+            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
             .style = style,
+            .anchors = anchors,
             .rect = geom.AABB.init(0, 0, 160, 160),
         };
         return this;
     }
 
-    pub fn sizeImpl(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
-        // const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
-        // this.rect = bounds;
-        _ = ptr;
+    /// Items positioned relative to self
+    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.rect;
+    }
+
+    fn sizeFn(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        var aabb = geom.AABB.init(0, 0, 160, 160);
+        aabb.pos = bounds.top_left() + this.anchors.top_left;
+        aabb.size = bounds.bottom_right() - this.anchors.bottom_right - this.anchors.top_left;
+        this.rect = aabb;
         return bounds;
     }
 
-    pub fn deleteImpl(ptr: *anyopaque) void {
+    fn deleteFn(ptr: *anyopaque) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         this.alloc.destroy(this);
     }
 
-    fn renderImpl(ptr: *anyopaque, offset: geom.Vec2) geom.Vec2 {
+    fn renderFn(ptr: *anyopaque, offset: geom.Vec2) geom.Vec2 {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         const pos = this.rect.pos + offset;
         w4.DRAW_COLORS.* = this.style;
@@ -146,7 +198,7 @@ pub const Sprite = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeImpl, renderImpl, deleteImpl),
+            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
             .bmp = bmp,
             .pos = geom.Vec2{ 0, 0 },
             .rect = if (src) |r| .{ .aabb = r } else .full,
@@ -156,14 +208,25 @@ pub const Sprite = struct {
         return this;
     }
 
-    pub fn deleteImpl(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    /// WARNING: Not safe if this is part of a displaylist
+    pub fn deinit(this: *@This()) void {
         this.alloc.destroy(this);
     }
 
-    pub fn sizeImpl(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
-        // const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
-        _ = ptr;
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.deinit();
+    }
+
+    fn layoutFn(ptr: *anyopaque, child: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        _ = child;
+        return this.element.bounds;
+    }
+
+    fn sizeFn(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        _ = this;
         return bounds;
         // this.pos = bounds.pos;
         // return switch (this.rect) {
@@ -172,7 +235,7 @@ pub const Sprite = struct {
         // };
     }
 
-    fn renderImpl(ptr: *anyopaque, offset: geom.Vec2) geom.Vec2 {
+    fn renderFn(ptr: *anyopaque, offset: geom.Vec2) geom.Vec2 {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         w4.DRAW_COLORS.* = this.style;
         switch (this.rect) {
@@ -182,76 +245,3 @@ pub const Sprite = struct {
         return this.pos + offset;
     }
 };
-
-// pub const Node = struct {
-//     T: union(enum) {
-//         none,
-//         panel,
-//         sprite: struct {
-//             data: *Blit,
-//             src: ?geom.Vec2,
-//             flags: BlitFlags,
-//         },
-//     },
-//     pos: geom.Vec2,
-//     size: geom.Vec2,
-//     style: u16,
-//     next: ?*Element = null,
-//     child: ?*Element = null,
-
-//     pub fn stage() @This() {
-//         return @This(){
-//             .T = .none,
-//             .pos = geom.Vec2{ 0, 0 },
-//             .size = geom.Vec2{ 160, 160 },
-//             .style = draw.color.select(.Transparent, .Transparent),
-//         };
-//     }
-
-//     pub fn panel(style: u16, rect: geom.AABB) @This() {
-//         return @This(){
-//             .T = .panel,
-//             .pos = rect.pos,
-//             .size = rect.size,
-//             .style = style,
-//         };
-//     }
-
-//     pub fn sprite(style: u16, rect: geom.AABB, blit: *Blit, src: ?geom.Vec2) @This() {
-//         return @This(){
-//             .pos = rect.pos,
-//             .size = rect.size,
-//             .style = style,
-//             .T = .{
-//                 .sprite = .{
-//                     .data = blit,
-//                     .src = src,
-//                     .flags = .{ .bpp = .b1 },
-//                 },
-//             },
-//         };
-//     }
-
-//     pub fn appendChild(this: *@This(), el: *@This()) void {
-//         this.child = el;
-//     }
-
-//     pub fn append(this: *@This(), el: *@This()) void {
-//         this.next = el;
-//     }
-
-//     pub fn render(this: @This(), offset: ?geom.Vec2) void {
-//         const pos = (offset orelse geom.Vec2{ 0, 0 }) + this.pos;
-//         w4.DRAW_COLORS.* = this.style;
-//         switch (this.T) {
-//             .none => {},
-//             .panel => w4.rect(pos[v.x], pos[v.y], @intCast(u32, this.size[v.x]), @intCast(u32, this.size[v.y])),
-//             .sprite => |sprite| {
-//                 const blit = sprite.data;
-//                 blit.blit(pos, sprite.flags);
-//             },
-//         }
-//         if (this.child) |child| child.render(pos);
-//         if (this.next) |next| next.render(offset);
-//     }
-// };

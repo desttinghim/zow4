@@ -4,6 +4,7 @@ const zow4 = @import("zow4");
 const geom = zow4.geometry;
 const color = zow4.draw.color;
 
+const ui = zow4.ui;
 const Sprite = zow4.ui.Sprite;
 const Panel = zow4.ui.Panel;
 const Stage = zow4.ui.Stage;
@@ -22,11 +23,12 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
+    var panel = Panel.new(alloc, color.select(.Light, .Dark), ui.Anchors.init(10, 10, 10, 10)) catch @panic("creating element");
     panel.rect.pos = geom.Vec2{ 60, 60 };
     bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, null) catch @panic("sprite");
     panel.element.appendChild(&bubbles.element);
     stage.element.appendChild(&panel.element);
+    stage.layout();
 }
 
 export fn update() void {
