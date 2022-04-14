@@ -10,6 +10,7 @@ const BlitFlags = draw.BlitFlags;
 const ElementIface = struct {
     self: *anyopaque,
     bounds: geom.AABB,
+    size: geom.AABB,
     children: usize = 0,
     prev: ?*@This() = null,
     next: ?*@This() = null,
@@ -34,6 +35,7 @@ const ElementIface = struct {
         return @This(){
             .self = self,
             .bounds = geom.AABB.init(0, 0, 160, 160),
+            .size = geom.AABB.init(0, 0, 160, 160),
             .sizeFn = sizeFn,
             .layoutFn = layoutFn,
             .renderFn = renderFn,
@@ -54,18 +56,27 @@ const ElementIface = struct {
         while (child_opt) |child| : (i += 1) {
             child.layout();
             const bounds = this.layoutFn(this.self, i);
-            _ = child.sizeFn(child.self, bounds);
+            child.size = child.sizeFn(child.self, bounds);
             child_opt = child.next;
         }
     }
 
+    pub fn getChild(this: *@This(), num: usize) ?*@This() {
+        var i: usize = 0;
+        var child_opt = this.child;
+        while (child_opt) |child| : (i += 1) {
+            if (i == num) return child;
+        }
+        return null;
+    }
+
     pub fn appendChild(this: *@This(), el: *@This()) void {
-        el.parent = this;
-        this.children += 1;
         if (this.child) |child| {
             child.append(el);
         } else {
             this.child = el;
+            el.parent = this;
+            this.children += 1;
         }
     }
 
@@ -75,6 +86,8 @@ const ElementIface = struct {
         } else {
             this.next = el;
             el.prev = this;
+            el.parent = this.parent;
+            el.parent.?.children += 1;
         }
     }
 
@@ -134,6 +147,43 @@ pub const Anchors = struct {
             .top_left = geom.Vec2{ left, top },
             .bottom_right = geom.Vec2{ right, bottom },
         };
+    }
+};
+
+pub const Center = struct {
+    alloc: std.mem.Allocator,
+    element: ElementIface,
+
+    pub fn new(alloc: std.mem.Allocator) !*@This() {
+        const this = try alloc.create(@This());
+        this.* = @This(){
+            .alloc = alloc,
+            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+        };
+        return this;
+    }
+
+    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.bounds;
+    }
+
+    fn sizeFn(_: *anyopaque, bounds: geom.AABB) geom.AABB {
+        return bounds;
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.alloc.destroy(this);
+    }
+
+    fn renderFn(ptr: *anyopaque, _: geom.Vec2) geom.Vec2 {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        var center = @divTrunc(this.element.size.size, geom.Vec2{ 2, 2 });
+        if (this.element.getChild(0)) |child| {
+            center -= @divTrunc(child.size.size, geom.Vec2{ 2, 2 });
+        }
+        return center;
     }
 };
 
@@ -226,13 +276,10 @@ pub const Sprite = struct {
 
     fn sizeFn(ptr: *anyopaque, bounds: geom.AABB) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
-        _ = this;
-        return bounds;
-        // this.pos = bounds.pos;
-        // return switch (this.rect) {
-        //     .full => geom.AABB.init(bounds.pos[v.x], bounds.pos[v.y], this.bmp.width, this.bmp.height),
-        //     .aabb => |aabb| geom.AABB.init(bounds.pos[v.x], bounds.pos[v.y], aabb.size[v.x], aabb.size[v.y]),
-        // };
+        return switch (this.rect) {
+            .full => geom.AABB.init(bounds.pos[v.x], bounds.pos[v.y], this.bmp.width, this.bmp.height),
+            .aabb => |aabb| geom.AABB.init(bounds.pos[v.x], bounds.pos[v.y], aabb.size[v.x], aabb.size[v.y]),
+        };
     }
 
     fn renderFn(ptr: *anyopaque, offset: geom.Vec2) geom.Vec2 {

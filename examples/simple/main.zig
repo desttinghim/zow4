@@ -25,9 +25,14 @@ export fn start() void {
 
     var panel = Panel.new(alloc, color.select(.Light, .Dark), ui.Anchors.init(10, 10, 10, 10)) catch @panic("creating element");
     panel.rect.pos = geom.Vec2{ 60, 60 };
-    bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, null) catch @panic("sprite");
-    panel.element.appendChild(&bubbles.element);
     stage.element.appendChild(&panel.element);
+
+    var center = ui.Center.new(alloc) catch @panic("creating center element");
+    panel.element.appendChild(&center.element);
+
+    bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, null) catch @panic("sprite");
+    center.element.appendChild(&bubbles.element);
+
     stage.layout();
 }
 

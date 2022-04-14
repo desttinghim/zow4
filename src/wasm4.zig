@@ -121,6 +121,16 @@ const externWasm4 = struct {
 
     /// Prints a message to the debug console.
     pub extern fn trace(x: [*]const u8) void;
+
+    /// Use with caution, as there's no compile-time type checking.
+    ///
+    /// * %c, %d, and %x expect 32-bit integers.
+    /// * %f expects 64-bit floats.
+    /// * %s expects a *zero-terminated* string pointer.
+    ///
+    /// See https://github.com/aduros/wasm4/issues/244 for discussion and type-safe
+    /// alternatives.
+    pub extern fn tracef(x: [*:0]const u8, ...) void;
 };
 
 const stubWasm4 = struct {
@@ -162,4 +172,5 @@ const stubWasm4 = struct {
         return 0;
     }
     pub fn trace(_: [*]const u8) void {}
+    // pub fn tracef(_: [*:0]const u8, ...) void {}
 };
