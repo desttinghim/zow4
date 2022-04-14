@@ -23,9 +23,11 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    var panel = Panel.new(alloc, color.select(.Light, .Dark), ui.Anchors.init(10, 10, 10, 10)) catch @panic("creating element");
-    panel.rect.pos = geom.Vec2{ 60, 60 };
-    stage.element.appendChild(&panel.element);
+    var anchor = ui.AnchorElement.new(alloc, ui.Anchor.init(10, 10, -10, -10)) catch @panic("creating anchorEl");
+    stage.element.appendChild(&anchor.element);
+
+    var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
+    anchor.element.appendChild(&panel.element);
 
     var center = ui.Center.new(alloc) catch @panic("creating center element");
     panel.element.appendChild(&center.element);
@@ -34,6 +36,11 @@ export fn start() void {
     center.element.appendChild(&bubbles.element);
 
     stage.layout();
+
+    w4.tracef("anchor - %d %d %d %d", anchor.element.size.pos[0], anchor.element.size.pos[1], anchor.element.size.size[0], anchor.element.size.size[1]);
+    w4.tracef("panel - %d %d %d %d", panel.element.size.pos[0], panel.element.size.pos[1], panel.element.size.size[0], panel.element.size.size[1]);
+    w4.tracef("center - %d %d %d %d", center.element.size.pos[0], center.element.size.pos[1], center.element.size.size[0], center.element.size.size[1]);
+    w4.tracef("bubbles - %d %d %d %d", bubbles.element.size.pos[0], bubbles.element.size.pos[1], bubbles.element.size.size[0], bubbles.element.size.size[1]);
 }
 
 export fn update() void {

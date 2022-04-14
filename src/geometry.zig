@@ -81,6 +81,13 @@ pub const AABB = struct {
         };
     }
 
+    pub fn initv(topleft: Vec2, size: Vec2) @This() {
+        return @This(){
+            .pos = topleft,
+            .size = size,
+        };
+    }
+
     pub fn addv(this: @This(), vec2: Vec2) @This() {
         return @This(){ .pos = this.pos + vec2, .size = this.size };
     }
