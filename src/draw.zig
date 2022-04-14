@@ -3,6 +3,36 @@ const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
 const v = geom.Vec;
 
+pub const Color = enum(u16) {
+    Transparent = 0,
+    Light = 1,
+    Midtone1 = 2,
+    Midtone2 = 3,
+    Dark = 4,
+};
+
+pub const color = struct {
+    pub fn fill(col: Color) u16 {
+        return @enumToInt(col);
+    }
+
+    pub fn stroke(col: Color) u16 {
+        return @enumToInt(col) << 4;
+    }
+
+    pub fn select(col1: Color, col2: Color) u16 {
+        return @enumToInt(col1) |
+            (@enumToInt(col2)) << 4;
+    }
+
+    pub fn select4(col1: Color, col2: Color, col3: Color, col4: Color) u16 {
+        return @enumToInt(col1) |
+            (@enumToInt(col2) << 4) |
+            (@enumToInt(col3) << 8) |
+            (@enumToInt(col4) << 12);
+    }
+};
+
 pub const Sprite = struct {
     bmp: *const Blit,
     pos: geom.Vec2,

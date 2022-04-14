@@ -53,6 +53,13 @@ pub const AABB = struct {
     pos: Vec2,
     size: Vec2,
 
+    pub fn init(x: i32, y: i32, w: i32, h: i32) @This() {
+        return @This(){
+            .pos = Vec2{ x, y },
+            .size = Vec2{ w, h },
+        };
+    }
+
     pub fn addv(this: @This(), vec2: Vec2) @This() {
         return @This(){ .pos = this.pos + vec2, .size = this.size };
     }
@@ -68,6 +75,13 @@ pub const AABB = struct {
 pub const AABBf = struct {
     pos: Vec2f,
     size: Vec2f,
+
+    pub fn init(x: f32, y: f32, w: f32, h: f32) @This() {
+        return @This(){
+            .pos = Vec2{ x, y },
+            .size = Vec2{ w, h },
+        };
+    }
 
     pub fn addv(this: @This(), vec2f: Vec2f) @This() {
         return @This(){ .pos = this.pos + vec2f, .size = this.size };
