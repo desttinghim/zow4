@@ -267,24 +267,16 @@ pub const Panel = struct {
 pub const Sprite = struct {
     alloc: std.mem.Allocator,
     element: ElementIface,
-    bmp: *const Blit,
-    pos: geom.Vec2,
-    rect: union(enum) { full, aabb: geom.AABB },
-    flags: BlitFlags,
-    style: u16,
+    blit: Blit,
 
-    pub fn new(alloc: std.mem.Allocator, style: u16, bmp: *const Blit, src: ?geom.AABB) !*@This() {
+    pub fn new(alloc: std.mem.Allocator, blit: Blit) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
             .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
-            .bmp = bmp,
-            .pos = geom.Vec2{ 0, 0 },
-            .rect = if (src) |r| .{ .aabb = r } else .full,
-            .flags = .{ .bpp = .b1 },
-            .style = style,
+            .blit = blit,
         };
-        this.element.size.size = this.get_size();
+        this.element.size.size = this.blit.get_size();
         return this;
     }
 
@@ -304,25 +296,14 @@ pub const Sprite = struct {
         return this.element.size;
     }
 
-    fn get_size(this: *@This()) geom.Vec2 {
-        return switch (this.rect) {
-            .full => geom.Vec2{ this.bmp.width, this.bmp.height },
-            .aabb => |aabb| geom.Vec2{ aabb.size[v.x], aabb.size[v.y] },
-        };
-    }
-
     fn sizeFn(ptr: *anyopaque) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         const bounds = this.element.bounds;
-        return geom.AABB.initv(bounds.pos, this.get_size());
+        return geom.AABB.initv(bounds.pos, this.blit.get_size());
     }
 
     fn renderFn(ptr: *anyopaque) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
-        w4.DRAW_COLORS.* = this.style;
-        switch (this.rect) {
-            .full => this.bmp.blit(this.element.size.pos, this.flags),
-            .aabb => |aabb| this.bmp.blitSub(this.element.size.pos, aabb, this.flags),
-        }
+        this.blit.blit(this.element.size.pos);
     }
 };

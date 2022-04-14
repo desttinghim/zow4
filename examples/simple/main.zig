@@ -9,7 +9,7 @@ const Sprite = zow4.ui.Sprite;
 const Panel = zow4.ui.Panel;
 const Stage = zow4.ui.Stage;
 
-const bubbles_bmp = zow4.draw.bmpToBlit(@embedFile("bubbles.bmp")) catch |e| @compileLog("Hey", e);
+const bubbles_bmp = zow4.draw.load_bitmap(@embedFile("bubbles.bmp")) catch |e| @compileLog("Hey", e);
 
 var fba: std.heap.FixedBufferAllocator = undefined;
 var alloc: std.mem.Allocator = undefined;
@@ -19,7 +19,6 @@ var stage: *Stage = undefined;
 export fn start() void {
     fba = zow4.heap.init();
     alloc = fba.allocator();
-    // bubbles = Sprite.init(&bubbles_bmp, geom.Vec2{ 60, 60 });
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
@@ -32,7 +31,9 @@ export fn start() void {
     var center = ui.Center.new(alloc) catch @panic("creating center element");
     panel.element.appendChild(&center.element);
 
-    bubbles = Sprite.new(alloc, 0x0004, &bubbles_bmp, null) catch @panic("sprite");
+    const blit = zow4.draw.Blit.init(0x0004, &bubbles_bmp, .{ .bpp = .b1 });
+
+    bubbles = Sprite.new(alloc, blit) catch @panic("sprite");
     center.element.appendChild(&bubbles.element);
 
     stage.layout();

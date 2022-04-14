@@ -33,39 +33,48 @@ pub const color = struct {
     }
 };
 
-// pub const Sprite = struct {
-//     bmp: *const Blit,
-//     pos: geom.Vec2,
-//     rect: union(enum) { full, aabb: geom.AABB },
-//     flags: BlitFlags,
-
-//     pub fn init(bmp: *const Blit, pos: geom.Vec2) @This() {
-//         return @This(){
-//             .bmp = bmp,
-//             .pos = pos,
-//             .rect = .full,
-//             .flags = .{ .bpp = .b1 },
-//         };
-//     }
-
-//     pub fn init_sub(bmp: *const Blit, pos: geom.Vec2, rect: geom.AABB) @This() {
-//         return @This(){
-//             .bmp = bmp,
-//             .pos = pos,
-//             .rect = .{ .aabb = rect },
-//             .flags = .{ .bpp = .b1 },
-//         };
-//     }
-
-//     pub fn blit(this: @This()) void {
-//         switch (this.rect) {
-//             .full => this.bmp.blit(this.pos, this.flags),
-//             .aabb => |aabb| this.bmp.blitSub(this.pos, aabb, this.flags),
-//         }
-//     }
-// };
-
+// Object to render bitmap
 pub const Blit = struct {
+    bmp: *const Bitmap,
+    rect: union(enum) { full, aabb: geom.AABB },
+    flags: BlitFlags,
+    style: u16,
+
+    pub fn init(style: u16, bitmap: *const Bitmap, flags: BlitFlags) @This() {
+        return @This(){
+            .bmp = bitmap,
+            .rect = .full,
+            .flags = flags,
+            .style = style,
+        };
+    }
+
+    pub fn init_sub(style: u16, bitmap: *const Bitmap, flags: BlitFlags, region: geom.AABB) @This() {
+        return @This(){
+            .bmp = bitmap,
+            .rect = .{ .aabb = region },
+            .flags = flags,
+            .style = style,
+        };
+    }
+
+    pub fn get_size(this: @This()) geom.Vec2 {
+        return switch (this.rect) {
+            .full => geom.Vec2{ this.bmp.width, this.bmp.height },
+            .aabb => |aabb| geom.Vec2{ aabb.size[v.x], aabb.size[v.y] },
+        };
+    }
+
+    pub fn blit(this: @This(), pos: geom.Vec2) void {
+        w4.DRAW_COLORS.* = this.style;
+        switch (this.rect) {
+            .full => this.bmp.blit(pos, this.flags),
+            .aabb => |aabb| this.bmp.blit_sub(pos, aabb, this.flags),
+        }
+    }
+};
+
+pub const Bitmap = struct {
     data: [*]const u8,
     width: i32,
     height: i32,
@@ -74,7 +83,7 @@ pub const Blit = struct {
         w4.blit(this.data, pos[v.x], pos[v.y], this.width, this.height, @bitCast(u32, flags));
     }
 
-    pub fn blitSub(this: @This(), pos: geom.Vec2, rect: geom.AABB, flags: BlitFlags) void {
+    pub fn blit_sub(this: @This(), pos: geom.Vec2, rect: geom.AABB, flags: BlitFlags) void {
         w4.blitSub(
             this.data,
             pos[v.x],
@@ -112,7 +121,7 @@ pub const BlittyError = error{
     UnsupportedHeight,
 };
 
-pub fn bmpToBlit(comptime monoBmp: []const u8) BlittyError!Blit {
+pub fn load_bitmap(comptime monoBmp: []const u8) BlittyError!Bitmap {
     if (!std.mem.eql(u8, "BM", monoBmp[0x0..0x2])) {
         return BlittyError.NotABitmap;
     }
@@ -201,7 +210,7 @@ pub fn bmpToBlit(comptime monoBmp: []const u8) BlittyError!Blit {
     //     @compileLog(std.fmt.comptimePrint("{b:08}", .{byte}));
     // }
 
-    return Blit{
+    return Bitmap{
         .data = &blitData,
         .width = @intCast(i32, imgWidth),
         .height = @intCast(i32, imgHeight),
