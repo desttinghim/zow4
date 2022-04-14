@@ -142,6 +142,7 @@ const stubWasm4 = struct {
     pub const MOUSE_BUTTONS: *const u8 = @ptrCast(*const u8, &buffer[0x1e]);
     pub const SYSTEM_FLAGS: *u8 = @ptrCast(*u8, &buffer[0x1f]);
     pub const FRAMEBUFFER: *[6400]u8 = @ptrCast(*[6400]u8, &buffer[0xA0]);
+    pub const PROGRAM_MEMORY: *[58975]u8 = @ptrCast(*[58975]u8, &buffer[0x19A0]);
 
     pub fn blit(_: [*]const u8, _: i32, _: i32, _: i32, _: i32, _: u32) void {}
     pub fn blitSub(_: [*]const u8, _: i32, _: i32, _: i32, _: i32, _: u32, _: u32, _: i32, _: u32) void {}
