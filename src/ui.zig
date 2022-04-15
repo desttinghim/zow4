@@ -2,6 +2,7 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
 const draw = @import("draw.zig");
+const text = @import("text.zig");
 const Input = @import("input.zig");
 const v = geom.Vec;
 
@@ -13,11 +14,45 @@ pub const Event = union(enum) {
     MouseReleased: geom.Vec2,
     MouseMoved: geom.Vec2,
     MouseClicked: geom.Vec2,
+    MouseEnter,
+    MouseLeave,
 };
+
+fn button_callback(ptr: *anyopaque, event: Event) void {
+    const this = @ptrCast(*Panel, @alignCast(@alignOf(Panel), ptr));
+    switch (event) {
+        .MousePressed => |_| {
+            this.style = draw.color.select(.Dark, .Dark);
+        },
+        .MouseEnter,
+        .MouseReleased,
+        => {
+            this.style = draw.color.select(.Midtone1, .Dark);
+        },
+        .MouseLeave => {
+            this.style = draw.color.select(.Light, .Dark);
+        },
+        else => {},
+    }
+}
+
+pub fn button(alloc: std.mem.Allocator, string: []const u8) !*Element {
+    var btn = try Panel.new(alloc, draw.color.select(.Light, .Dark));
+    btn.element.listen(button_callback);
+
+    var center = try Center.new(alloc);
+    btn.element.appendChild(&center.element);
+
+    var btn_label = try Label.new(alloc, draw.color.fill(.Dark), string);
+    center.element.appendChild(&btn_label.element);
+
+    return &btn.element;
+}
 
 pub const Element = struct {
     self: *anyopaque,
     hidden: bool = false,
+    hover: bool = false,
     /// Space that the element is allowed to take up
     bounds: geom.AABB,
     /// Space that the element takes up
@@ -61,34 +96,47 @@ pub const Element = struct {
         this.eventFn = cb;
     }
 
-    fn bubble(this: *@This(), event: Event) bool {
+    fn update(this: *@This()) void {
+        if (this.size.contains(Input.mousepos())) {
+            if (!this.hover) {
+                this.hover = true;
+                this.event(.MouseEnter);
+            }
+        } else {
+            this.event(.MouseLeave);
+            this.hover = false;
+        }
+        if (this.child) |child| child.update();
+        if (this.next) |next| next.update();
+    }
+
+    fn event(this: *@This(), ev: Event) void {
+        if (this.eventFn) |cb| {
+            cb(this.self, ev);
+        }
+    }
+
+    fn bubble(this: *@This(), ev: Event) void {
         var child_opt = this.child;
         var i: usize = 0;
-        while (child_opt) |child| : (i += 1) {
+        while (child_opt) |child| : (child_opt = child.next) {
             if (child.hidden) {
-                child_opt = child.next;
+                i += 1;
                 continue;
             }
-            const consumed =
-                switch (event) {
+            switch (ev) {
                 .MouseMoved,
                 .MousePressed,
                 .MouseReleased,
                 .MouseClicked,
-                => |pos| child.size.contains(pos) and child.bubble(event),
-                // else => {
-                //     const consumed = child.bubble(event);
-                //     if (consumed) return true;
-                // },
-            };
-            if (consumed) return true;
-            child_opt = child.next;
+                => |pos| {
+                    if (child.size.contains(pos)) child.bubble(ev);
+                },
+                else => child.bubble(ev),
+            }
+            i += 1;
         }
-        if (this.eventFn) |cb| {
-            cb(this.self, event);
-            return true;
-        }
-        return false;
+        this.event(ev);
     }
 
     pub fn remove(this: *@This()) void {
@@ -172,18 +220,20 @@ pub const Stage = struct {
     element: Element,
 
     pub fn update(this: *@This()) void {
+        this.element.update();
+
         const mousepos = Input.mousepos();
         if (Input.mousep(.left)) {
-            _ = this.element.bubble(.{ .MousePressed = mousepos });
+            this.element.bubble(.{ .MousePressed = mousepos });
         }
         if (Input.mouser(.left)) {
-            _ = this.element.bubble(.{ .MouseReleased = mousepos });
+            this.element.bubble(.{ .MouseReleased = mousepos });
         }
         if (geom.Vec.isZero(Input.mousediff())) {
-            _ = this.element.bubble(.{ .MouseMoved = mousepos });
+            this.element.bubble(.{ .MouseMoved = mousepos });
         }
         if (Input.clickstate == .clicked) {
-            _ = this.element.bubble(.{ .MouseClicked = mousepos });
+            this.element.bubble(.{ .MouseClicked = mousepos });
         }
     }
 
@@ -241,6 +291,41 @@ pub const VList = struct {
         return geom.AABB.initv(
             this.element.bounds.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
             geom.Vec2{ this.element.bounds.size[v.x], vsize },
+        );
+    }
+
+    fn sizeFn(ptr: *anyopaque) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.bounds;
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.alloc.destroy(this);
+    }
+
+    fn renderFn(_: *anyopaque) void {}
+};
+
+pub const HList = struct {
+    alloc: std.mem.Allocator,
+    element: Element,
+
+    pub fn new(alloc: std.mem.Allocator) !*@This() {
+        const this = try alloc.create(@This());
+        this.* = @This(){
+            .alloc = alloc,
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+        };
+        return this;
+    }
+
+    fn layoutFn(ptr: *anyopaque, childID: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        const hsize = @divTrunc(this.element.bounds.size[v.x], @intCast(i32, this.element.children));
+        return geom.AABB.initv(
+            this.element.bounds.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
+            geom.Vec2{ hsize, this.element.bounds.size[v.y] },
         );
     }
 
@@ -453,5 +538,49 @@ pub const Sprite = struct {
     fn renderFn(ptr: *anyopaque) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
         this.blit.blit(this.element.size.pos);
+    }
+};
+
+pub const Label = struct {
+    alloc: std.mem.Allocator,
+    element: Element,
+    style: u16,
+    string: []const u8,
+
+    pub fn new(alloc: std.mem.Allocator, style: u16, txt: []const u8) !*@This() {
+        const this = try alloc.create(@This());
+        this.* = @This(){
+            .alloc = alloc,
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .style = style,
+            .string = txt,
+        };
+        return this;
+    }
+
+    /// WARNING: Not safe if this is part of a displaylist
+    pub fn deinit(this: *@This()) void {
+        this.alloc.destroy(this);
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.deinit();
+    }
+
+    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.size;
+    }
+
+    fn sizeFn(ptr: *anyopaque) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return geom.AABB.initv(this.element.bounds.pos, text.text_size(this.string));
+    }
+
+    fn renderFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        w4.DRAW_COLORS.* = this.style;
+        draw.text(this.string, this.element.size.pos);
     }
 };

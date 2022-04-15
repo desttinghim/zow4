@@ -2,6 +2,55 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
 const v = geom.Vec;
+const Text = @import("text.zig");
+
+pub fn pixel(x: i32, y: i32) void {
+    if (x < 0 or x >= 160 or y < 0 or y >= 160) return;
+    // The byte index into the framebuffer that contains (x, y)
+    const idx = (@intCast(usize, y) * 160 + @intCast(usize, x)) >> 2;
+    // Calculate the bits within the byte that corresponds to our position
+    const shift = @intCast(u3, (x & 0b11) * 2);
+    const mask = @as(u8, 0b11) << shift;
+    // Use the first DRAW_COLOR as the pixel color
+    const palette_color = @intCast(u8, w4.DRAW_COLORS.* & 0b1111);
+    if (palette_color == 0) { // Transparent
+        return;
+    }
+    const col= (palette_color - 1) & 0b11;
+    // Write to the framebuffer
+    w4.FRAMEBUFFER[idx] = (col << shift) | (w4.FRAMEBUFFER[idx] & ~mask);
+}
+
+pub fn text(string: []const u8, pos: geom.Vec2) void {
+    w4.textUtf8(string.ptr, string.len, pos[0], pos[1]);
+}
+
+/// Draws a string in a miniature form, with 1 pixel equal to 1 character.
+pub fn text_mini(string: []const u8, pos: geom.Vec2, lines: ?usize) void {
+    var x = pos[0];
+    var y = pos[1];
+    var line: usize = 0;
+    for (string) |char| {
+        switch (Text.get_char_draw_type(char)) {
+            .Space => {
+                x += 1;
+            },
+            .Character => {
+                pixel(x, y);
+                x += 1;
+            },
+            .Newline => {
+                line += 1;
+                if (lines) |l| {
+                    if (line == l) return;
+                }
+                x = pos[0];
+                y += 1;
+            },
+        }
+    }
+}
+
 
 pub const Color = enum(u16) {
     Transparent = 0,

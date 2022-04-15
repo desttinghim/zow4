@@ -52,11 +52,21 @@ export fn start() void {
     float.element.listen(float_drag);
     stage.element.appendChild(&float.element);
 
+    var menubar = ui.Float.new(alloc, geom.AABB.init(0, 0, 160, 16)) catch @panic("creating menubar");
+    stage.element.appendChild(&menubar.element);
+
+    var hlist = ui.HList.new(alloc) catch @panic("hlist");
+    menubar.element.appendChild(&hlist.element);
+
+    var btn1 = ui.button(alloc, "File") catch @panic("creating button");
+    hlist.element.appendChild(btn1);
+    var btn2 = ui.button(alloc, "Edit") catch @panic("creating button");
+    hlist.element.appendChild(btn2);
+    var btn3 = ui.button(alloc, "Quit") catch @panic("creating button");
+    hlist.element.appendChild(btn3);
+
     var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
     float.element.appendChild(&panel.element);
-
-    // var vlist = ui.VList.new(alloc) catch @panic("vlist");
-    // panel.element.appendChild(&vlist.element);
 
     // var c1 = Panel.new(alloc, color.select(.Light, .Transparent)) catch @panic("c1");
     // var c2 = Panel.new(alloc, color.select(.Midtone1, .Transparent)) catch @panic("c2");
