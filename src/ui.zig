@@ -2,14 +2,25 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
 const draw = @import("draw.zig");
+const Input = @import("input.zig");
 const v = geom.Vec;
 
 const Blit = draw.Blit;
 const BlitFlags = draw.BlitFlags;
 
-const ElementIface = struct {
+pub const Event = union(enum) {
+    MousePressed: geom.Vec2,
+    MouseReleased: geom.Vec2,
+    MouseMoved: geom.Vec2,
+    MouseClicked: geom.Vec2,
+};
+
+pub const Element = struct {
     self: *anyopaque,
+    hidden: bool = false,
+    /// Space that the element is allowed to take up
     bounds: geom.AABB,
+    /// Space that the element takes up
     size: geom.AABB,
     children: usize = 0,
     prev: ?*@This() = null,
@@ -18,6 +29,7 @@ const ElementIface = struct {
     child: ?*@This() = null,
     // Function Pointers
     sizeFn: SizeFn,
+    eventFn: ?EventCB = null,
     layoutFn: LayoutFn,
     renderFn: RenderFn,
     deleteFn: DeleteFn,
@@ -26,6 +38,8 @@ const ElementIface = struct {
     const SizeFn = fn (*anyopaque) geom.AABB;
     /// Passed self number of children, and child number, returns bounds to be passed to size
     const LayoutFn = fn (*anyopaque, usize) geom.AABB;
+    /// Event
+    const EventCB = fn (*anyopaque, Event) void;
     /// Draws element to the screen
     const RenderFn = fn (*anyopaque) void;
     /// Frees element from memory
@@ -41,6 +55,40 @@ const ElementIface = struct {
             .renderFn = renderFn,
             .deleteFn = deleteFn,
         };
+    }
+
+    pub fn listen(this: *@This(), cb: EventCB) void {
+        this.eventFn = cb;
+    }
+
+    fn bubble(this: *@This(), event: Event) bool {
+        var child_opt = this.child;
+        var i: usize = 0;
+        while (child_opt) |child| : (i += 1) {
+            if (child.hidden) {
+                child_opt = child.next;
+                continue;
+            }
+            const consumed =
+                switch (event) {
+                .MouseMoved,
+                .MousePressed,
+                .MouseReleased,
+                .MouseClicked,
+                => |pos| child.size.contains(pos) and child.bubble(event),
+                // else => {
+                //     const consumed = child.bubble(event);
+                //     if (consumed) return true;
+                // },
+            };
+            if (consumed) return true;
+            child_opt = child.next;
+        }
+        if (this.eventFn) |cb| {
+            cb(this.self, event);
+            return true;
+        }
+        return false;
     }
 
     pub fn remove(this: *@This()) void {
@@ -111,15 +159,33 @@ const ElementIface = struct {
     }
 
     pub fn render(this: @This()) void {
-        this.renderFn(this.self);
-        if (this.child) |child| child.render();
+        if (!this.hidden) {
+            this.renderFn(this.self);
+            if (this.child) |child| child.render();
+        }
         if (this.next) |next| next.render();
     }
 };
 
 pub const Stage = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
+
+    pub fn update(this: *@This()) void {
+        const mousepos = Input.mousepos();
+        if (Input.mousep(.left)) {
+            _ = this.element.bubble(.{ .MousePressed = mousepos });
+        }
+        if (Input.mouser(.left)) {
+            _ = this.element.bubble(.{ .MouseReleased = mousepos });
+        }
+        if (geom.Vec.isZero(Input.mousediff())) {
+            _ = this.element.bubble(.{ .MouseMoved = mousepos });
+        }
+        if (Input.clickstate == .clicked) {
+            _ = this.element.bubble(.{ .MouseClicked = mousepos });
+        }
+    }
 
     pub fn render(this: @This()) void {
         this.element.render();
@@ -134,7 +200,7 @@ pub const Stage = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
         };
         return this;
     }
@@ -158,13 +224,13 @@ pub const Stage = struct {
 
 pub const VList = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
 
     pub fn new(alloc: std.mem.Allocator) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
         };
         return this;
     }
@@ -193,13 +259,13 @@ pub const VList = struct {
 
 pub const Float = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
 
     pub fn new(alloc: std.mem.Allocator, rect: geom.AABB) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
         };
         this.element.size = rect;
         return this;
@@ -237,14 +303,14 @@ pub const Anchor = struct {
 
 pub const AnchorElement = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
     anchor: Anchor,
 
     pub fn new(alloc: std.mem.Allocator, anchor: Anchor) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
             .anchor = anchor,
         };
         return this;
@@ -272,13 +338,13 @@ pub const AnchorElement = struct {
 
 pub const Center = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
 
     pub fn new(alloc: std.mem.Allocator) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
         };
         return this;
     }
@@ -309,14 +375,14 @@ pub const Center = struct {
 
 pub const Panel = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
     style: u16,
 
     pub fn new(alloc: std.mem.Allocator, style: u16) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
             .style = style,
         };
         return this;
@@ -348,14 +414,14 @@ pub const Panel = struct {
 
 pub const Sprite = struct {
     alloc: std.mem.Allocator,
-    element: ElementIface,
+    element: Element,
     blit: Blit,
 
     pub fn new(alloc: std.mem.Allocator, blit: Blit) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = ElementIface.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
             .blit = blit,
         };
         this.element.size.size = this.blit.get_size();

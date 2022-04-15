@@ -4,6 +4,7 @@ const zow4 = @import("zow4");
 const geom = zow4.geometry;
 const color = zow4.draw.color;
 
+const Input = zow4.input;
 const ui = zow4.ui;
 const Sprite = zow4.ui.Sprite;
 const Panel = zow4.ui.Panel;
@@ -15,6 +16,31 @@ var fba: std.heap.FixedBufferAllocator = undefined;
 var alloc: std.mem.Allocator = undefined;
 var bubbles: *Sprite = undefined;
 var stage: *Stage = undefined;
+var float: *ui.Float = undefined;
+
+var grabbed: ?*ui.Element = null;
+var grab_point: ?geom.Vec2 = null;
+
+fn float_drag(ptr: *anyopaque, event: ui.Event) void {
+    const this = @ptrCast(*ui.Float, @alignCast(@alignOf(ui.Float), ptr));
+    switch (event) {
+        .MouseReleased => |_| {
+            grabbed = null;
+            grab_point = null;
+            w4.trace("relase!");
+        },
+        .MousePressed => |pos| {
+            const diff = pos - this.element.size.pos;
+            grab_point = diff;
+            grabbed = &this.element;
+        },
+        .MouseClicked => |_| {
+            this.element.hidden = true;
+            return;
+        },
+        else => {},
+    }
+}
 
 export fn start() void {
     fba = zow4.heap.init();
@@ -22,7 +48,8 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    var float = ui.Float.new(alloc, geom.AABB.init(10, 10, 80, 80)) catch @panic("creating anchorEl");
+    float = ui.Float.new(alloc, geom.AABB.init(10, 10, 80, 80)) catch @panic("creating anchorEl");
+    float.element.listen(float_drag);
     stage.element.appendChild(&float.element);
 
     var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
@@ -52,7 +79,15 @@ export fn start() void {
 }
 
 export fn update() void {
+    stage.update();
+    stage.layout();
     stage.render();
+
+    if (grabbed) |el| {
+        if (grab_point) |point| {
+            el.size.pos = Input.mousepos() - point;
+        }
+    }
 
     w4.DRAW_COLORS.* = 2;
 
@@ -64,7 +99,9 @@ export fn update() void {
     const gamepad = w4.GAMEPAD1.*;
     if (gamepad & w4.BUTTON_1 != 0) {
         w4.DRAW_COLORS.* = 4;
+        float.element.hidden = false;
     }
 
     w4.text("Press X to blink", 16, 90);
+    Input.update();
 }

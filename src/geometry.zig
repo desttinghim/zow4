@@ -6,14 +6,17 @@ pub const Vec2 = std.meta.Vector(2, i32);
 pub const Vec = struct {
     pub const x = 0;
     pub const y = 1;
+
+    pub fn equals(v1: Vec2, v2: Vec2) bool {
+        return @reduce(.And, v1 == v2);
+    }
+
+    pub fn isZero(vec: Vec2) bool {
+        return equals(vec, Vec2{ 0, 0 });
+    }
 };
 
 const v = Vec;
-
-// pub const Vec = struct {
-//     pub const x = 0;
-//     pub const y = 1;
-// };
 
 pub const Dir = struct {
     pub const up = Vec2{ 0, -1 };
@@ -28,6 +31,18 @@ pub const DirF = struct {
     pub const left = Vec2f{ -1, 0 };
     pub const right = Vec2f{ 1, 0 };
 };
+
+pub fn lengthSquared(a: Vec2) i32 {
+    return @reduce(.Add, a * a);
+}
+
+pub fn length(a: Vec2) i32 {
+    return @floatToInt(i32, @intToFloat(f32, lengthSquared(a)));
+}
+
+pub fn dist(a: Vec2, b: Vec2) i32 {
+    return length(a - b);
+}
 
 pub fn distancef(a: Vec2f, b: Vec2f) f32 {
     var subbed = @fabs(a - b);
@@ -90,6 +105,13 @@ pub const AABB = struct {
 
     pub fn addv(this: @This(), vec2: Vec2) @This() {
         return @This(){ .pos = this.pos + vec2, .size = this.size };
+    }
+
+    pub fn contains(this: @This(), vec: Vec2) bool {
+        const tl = this.top_left();
+        const br = this.bottom_right();
+        return tl[v.x] < vec[v.x] and br[v.x] > vec[v.x] and
+            tl[v.y] < vec[v.y] and br[v.y] > vec[v.y];
     }
 
     pub fn overlaps(a: @This(), b: @This()) bool {

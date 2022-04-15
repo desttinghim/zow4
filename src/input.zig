@@ -29,6 +29,7 @@ test "usage" {
 }
 
 const w4 = @import("wasm4");
+const geom = @import("geometry.zig");
 
 /// Call at the end of the loop function. Updates previous input state to allow
 /// press and release to be detected.
@@ -38,6 +39,26 @@ pub fn update() void {
     gamepadstates[2] = w4.GAMEPAD3.*;
     gamepadstates[3] = w4.GAMEPAD4.*;
     mousestate = w4.MOUSE_BUTTONS.*;
+    mousepos_previous = mousepos();
+
+    clickstate = updateclick(clickstate);
+}
+
+fn updateclick(state: ClickState) ClickState {
+    switch (state) {
+        .open => {
+            if (mouse(.left)) return .{ .started = mousepos() };
+        },
+        .started => |startpos| {
+            if (!mouse(.left)) return .clicked;
+            if (geom.dist(startpos, mousepos()) > 3) return .dragging;
+        },
+        .dragging => {
+            if (!mouse(.left)) return .open;
+        },
+        .clicked => return .open,
+    }
+    return state;
 }
 
 // ┌───────────────────────────────────────────────────────────────────────────┐
@@ -93,11 +114,16 @@ pub fn btnr(gp: Gamepad, button: GamepadButton) bool {
 // │                                                                           │
 // └───────────────────────────────────────────────────────────────────────────┘
 var mousestate: u8 = 0;
+var mousepos_previous: geom.Vec2 = geom.Vec2{ 0, 0 };
+
+const ClickState = union(enum) { open, started: geom.Vec2, dragging, clicked };
+pub var clickstate: ClickState = .open;
 
 const MouseButton = enum(u8) {
     left = w4.MOUSE_LEFT,
     right = w4.MOUSE_RIGHT,
     middle = w4.MOUSE_MIDDLE,
+    any = w4.MOUSE_LEFT | w4.MOUSE_RIGHT | w4.MOUSE_MIDDLE,
 };
 
 /// Returns true if the given mouse button is down.
@@ -105,17 +131,26 @@ pub fn mouse(button: MouseButton) bool {
     return (w4.MOUSE_BUTTONS.* & @enumToInt(button)) > 0;
 }
 
+fn mouseprev(button: MouseButton) bool {
+    return (mousestate & @enumToInt(button)) > 0;
+}
+
 /// Returns true if the given mouse button was pressed this frame.
 pub fn mousep(button: MouseButton) bool {
-    return mouse(button) and (mousestate & @enumToInt(button)) == 0;
+    return mouse(button) and !mouseprev(button);
 }
 
 /// Returns true if the given mouse button was released this frame.
 pub fn mouser(button: MouseButton) bool {
-    return !mouse(button) and (mousestate & @enumToInt(button)) > 0;
+    return !mouse(button) and mouseprev(button);
 }
 
 /// Returns a vector with the mouse position
-pub fn mousepos() @Vector(2, i16) {
-    return @Vector(2, i16){ w4.MOUSE_X.*, w4.MOUSE_Y.* };
+pub fn mousepos() geom.Vec2 {
+    return geom.Vec2{ w4.MOUSE_X.*, w4.MOUSE_Y.* };
+}
+
+/// Returns a vector with a diff of the mouse position
+pub fn mousediff() geom.Vec2 {
+    return mousepos_previous - mousepos();
 }
