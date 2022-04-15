@@ -27,26 +27,19 @@ fn button_callback(ptr: *anyopaque, event: Event) void {
         .MouseEnter,
         .MouseReleased,
         => {
-            this.style = draw.color.select(.Midtone1, .Dark);
+            this.style = draw.color.select(.Light, .Dark);
         },
         .MouseLeave => {
-            this.style = draw.color.select(.Light, .Dark);
+            this.style = draw.color.select(.Light, .Light);
         },
         else => {},
     }
 }
 
-pub fn button(alloc: std.mem.Allocator, string: []const u8) !*Element {
-    var btn = try Panel.new(alloc, draw.color.select(.Light, .Dark));
-    btn.element.listen(button_callback);
-
-    var center = try Center.new(alloc);
-    btn.element.appendChild(&center.element);
-
-    var btn_label = try Label.new(alloc, draw.color.fill(.Dark), string);
-    center.element.appendChild(&btn_label.element);
-
-    return &btn.element;
+pub fn center(alloc: std.mem.Allocator, el: *Element) !*Element {
+    var centerEl = try Center.new(alloc);
+    centerEl.element.appendChild(el);
+    return &centerEl.element;
 }
 
 pub const Element = struct {
@@ -172,6 +165,7 @@ pub const Element = struct {
             return null;
         }
     };
+
     pub fn childIter(this: *@This()) ChildIter {
         return .{ .child_opt = this.child };
     }
@@ -436,8 +430,8 @@ pub const Center = struct {
 
     fn layoutFn(ptr: *anyopaque, childID: usize) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
-        const center = this.element.bounds.pos + @divTrunc(this.element.bounds.size, geom.Vec2{ 2, 2 });
-        var centeraabb = geom.AABB.initv(center, geom.Vec2{ 0, 0 });
+        const centerv = this.element.bounds.pos + @divTrunc(this.element.bounds.size, geom.Vec2{ 2, 2 });
+        var centeraabb = geom.AABB.initv(centerv, geom.Vec2{ 0, 0 });
         if (this.element.getChild(childID)) |child| {
             centeraabb.pos -= @divTrunc(child.size.size, geom.Vec2{ 2, 2 });
             centeraabb.size = child.size.size;
@@ -583,4 +577,103 @@ pub const Label = struct {
         w4.DRAW_COLORS.* = this.style;
         draw.text(this.string, this.element.size.pos);
     }
+};
+
+pub const ButtonStyle = struct {
+    label: u16,
+    panel: u16,
+};
+
+pub const StyleSheet = struct {
+    default: ButtonStyle,
+    hover: ButtonStyle,
+    click: ButtonStyle,
+};
+
+pub const DefaultStyle = StyleSheet{
+    .default = .{
+        .panel = draw.color.fill(.Light),
+        .label = draw.color.fill(.Dark),
+    },
+    .hover = .{
+        .panel = draw.color.select(.Light, .Dark),
+        .label = draw.color.fill(.Dark),
+    },
+    .click = .{
+        .panel = draw.color.fill(.Dark),
+        .label = draw.color.fill(.Light),
+    },
+};
+
+pub const Button = struct {
+    alloc: std.mem.Allocator,
+    element: Element,
+    label: *Label,
+    panel: *Panel,
+    stylesheet: StyleSheet,
+    onclick: ?fn () void,
+
+    pub fn new(alloc: std.mem.Allocator, style: StyleSheet, string: []const u8, onclick: ?fn () void) !*@This() {
+        const this = try alloc.create(@This());
+        const panel = try Panel.new(alloc, style.default.panel);
+        const centerel = try Center.new(alloc);
+        const label = try Label.new(alloc, style.default.label, string);
+        centerel.element.appendChild(&label.element);
+        panel.element.appendChild(&centerel.element);
+        this.* = @This(){
+            .alloc = alloc,
+            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .label = label,
+            .panel = panel,
+            .stylesheet = style,
+            .onclick = onclick,
+        };
+        this.element.appendChild(&panel.element);
+        this.element.listen(eventFn);
+        return this;
+    }
+
+    fn eventFn(ptr: *anyopaque, event: Event) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        switch (event) {
+            .MousePressed => |_| {
+                this.label.style = this.stylesheet.click.label;
+                this.panel.style = this.stylesheet.click.panel;
+                if (this.onclick) |onclick| onclick();
+            },
+            .MouseEnter,
+            .MouseReleased,
+            => {
+                this.label.style = this.stylesheet.hover.label;
+                this.panel.style = this.stylesheet.hover.panel;
+            },
+            .MouseLeave => {
+                this.label.style = this.stylesheet.default.label;
+                this.panel.style = this.stylesheet.default.panel;
+            },
+            else => {},
+        }
+    }
+
+    /// WARNING: Not safe if this is part of a displaylist
+    pub fn deinit(this: *@This()) void {
+        this.alloc.destroy(this);
+    }
+
+    fn deleteFn(ptr: *anyopaque) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        this.deinit();
+    }
+
+    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.size;
+    }
+
+    fn sizeFn(ptr: *anyopaque) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+        return this.element.bounds;
+    }
+
+    fn renderFn(_: *anyopaque) void {}
 };

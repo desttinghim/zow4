@@ -27,7 +27,6 @@ fn float_drag(ptr: *anyopaque, event: ui.Event) void {
         .MouseReleased => |_| {
             grabbed = null;
             grab_point = null;
-            w4.trace("relase!");
         },
         .MousePressed => |pos| {
             const diff = pos - this.element.size.pos;
@@ -35,11 +34,23 @@ fn float_drag(ptr: *anyopaque, event: ui.Event) void {
             grabbed = &this.element;
         },
         .MouseClicked => |_| {
-            this.element.hidden = true;
+            float_hide();
             return;
         },
         else => {},
     }
+}
+
+fn float_show() void {
+    float.element.hidden = false;
+}
+
+fn float_hide() void {
+    float.element.hidden = true;
+}
+
+fn float_toggle() void {
+    float.element.hidden = !float.element.hidden;
 }
 
 export fn start() void {
@@ -48,7 +59,7 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    float = ui.Float.new(alloc, geom.AABB.init(10, 10, 80, 80)) catch @panic("creating anchorEl");
+    float = ui.Float.new(alloc, geom.AABB.init(32, 32, 120, 120)) catch @panic("creating anchorEl");
     float.element.listen(float_drag);
     stage.element.appendChild(&float.element);
 
@@ -58,32 +69,28 @@ export fn start() void {
     var hlist = ui.HList.new(alloc) catch @panic("hlist");
     menubar.element.appendChild(&hlist.element);
 
-    var btn1 = ui.button(alloc, "File") catch @panic("creating button");
-    hlist.element.appendChild(btn1);
-    var btn2 = ui.button(alloc, "Edit") catch @panic("creating button");
-    hlist.element.appendChild(btn2);
-    var btn3 = ui.button(alloc, "Quit") catch @panic("creating button");
-    hlist.element.appendChild(btn3);
+    var btn1 = ui.Button.new(alloc, ui.DefaultStyle, "Show", float_show) catch @panic("creating button");
+    hlist.element.appendChild(&btn1.element);
+    var btn2 = ui.Button.new(alloc, ui.DefaultStyle, "Hide", float_hide) catch @panic("creating button");
+    hlist.element.appendChild(&btn2.element);
+    var btn3 = ui.Button.new(alloc, ui.DefaultStyle, "Toggle", float_toggle) catch @panic("creating button");
+    hlist.element.appendChild(&btn3.element);
 
     var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
     float.element.appendChild(&panel.element);
 
-    // var c1 = Panel.new(alloc, color.select(.Light, .Transparent)) catch @panic("c1");
-    // var c2 = Panel.new(alloc, color.select(.Midtone1, .Transparent)) catch @panic("c2");
-    // var c3 = Panel.new(alloc, color.select(.Midtone2, .Transparent)) catch @panic("c3");
-    // var c4 = Panel.new(alloc, color.select(.Dark, .Transparent)) catch @panic("c4");
-    // vlist.element.appendChild(&c1.element);
-    // vlist.element.appendChild(&c2.element);
-    // vlist.element.appendChild(&c3.element);
-    // vlist.element.appendChild(&c4.element);
+    var vlist = ui.VList.new(alloc) catch @panic("creating vlist");
+    panel.element.appendChild(&vlist.element);
+
+    vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), "Click To Hide") catch @panic("creating label")).element) catch @panic("centering"));
 
     var center = ui.Center.new(alloc) catch @panic("creating center element");
-    panel.element.appendChild(&center.element);
-
+    vlist.element.appendChild(&center.element);
     const blit = zow4.draw.Blit.init(0x0004, &bubbles_bmp, .{ .bpp = .b1 });
-
     bubbles = Sprite.new(alloc, blit) catch @panic("sprite");
     center.element.appendChild(&bubbles.element);
+
+    vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), "Drag To Move") catch @panic("creating label")).element) catch @panic("centering"));
 
     stage.layout();
 }
@@ -99,19 +106,5 @@ export fn update() void {
         }
     }
 
-    w4.DRAW_COLORS.* = 2;
-
-    const free = fba.buffer.len - fba.end_index;
-    const msg = std.fmt.allocPrintZ(alloc, "{} bytes free\nof {} bytes", .{ free, fba.buffer.len }) catch @panic("msg");
-    defer alloc.free(msg);
-    w4.text(msg.ptr, 10, 18);
-
-    const gamepad = w4.GAMEPAD1.*;
-    if (gamepad & w4.BUTTON_1 != 0) {
-        w4.DRAW_COLORS.* = 4;
-        float.element.hidden = false;
-    }
-
-    w4.text("Press X to blink", 16, 90);
     Input.update();
 }
