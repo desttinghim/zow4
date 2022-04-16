@@ -24,6 +24,21 @@ pub fn center(alloc: std.mem.Allocator, el: *Element) !*Element {
     return &centerEl.element;
 }
 
+/// Fill entire available space
+fn size_fill(el: *Element) geom.AABB {
+    return el.bounds;
+}
+
+/// Size is preset
+fn size_static(el: *Element) geom.AABB {
+    return el.size;
+}
+
+/// No layout
+fn layout_relative(el: *Element, _: usize) geom.AABB {
+    return el.size;
+}
+
 pub const Element = struct {
     hidden: bool = false,
     hover: bool = false,
@@ -41,7 +56,7 @@ pub const Element = struct {
     sizeFn: SizeFn,
     eventFn: ?EventCB = null,
     layoutFn: LayoutFn,
-    renderFn: RenderFn,
+    renderFn: ?RenderFn,
     deleteFn: DeleteFn,
 
     /// Passed self, bounding box, and returns a size
@@ -55,7 +70,7 @@ pub const Element = struct {
     /// Frees element from memory
     const DeleteFn = fn (*Element) void;
 
-    pub fn init(self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: RenderFn, deleteFn: DeleteFn) @This() {
+    pub fn init(self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn, deleteFn: DeleteFn) @This() {
         return @This(){
             .self = self,
             .bounds = geom.AABB.init(0, 0, 160, 160),
@@ -180,7 +195,7 @@ pub const Element = struct {
 
     pub fn render(this: @This()) void {
         if (!this.hidden) {
-            this.renderFn(this);
+            if (this.renderFn) |rfn| rfn(this);
             if (this.child) |child| child.render();
         }
         if (this.next) |next| next.render();
@@ -222,7 +237,7 @@ pub const Stage = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layoutFn, null, deleteFn),
         };
         return this;
     }
@@ -240,8 +255,6 @@ pub const Stage = struct {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
-
-    fn renderFn(_: Element) void {}
 };
 
 pub const VList = struct {
@@ -252,7 +265,7 @@ pub const VList = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, size_fill, layoutFn, null, deleteFn),
         };
         return this;
     }
@@ -266,17 +279,10 @@ pub const VList = struct {
         );
     }
 
-    fn sizeFn(el: *Element) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.bounds;
-    }
-
     fn deleteFn(el: *Element) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
-
-    fn renderFn(_: Element) void {}
 };
 
 pub const HList = struct {
@@ -287,7 +293,7 @@ pub const HList = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, size_fill, layoutFn, null, deleteFn),
         };
         return this;
     }
@@ -301,17 +307,10 @@ pub const HList = struct {
         );
     }
 
-    fn sizeFn(el: *Element) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.bounds;
-    }
-
     fn deleteFn(el: *Element) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
-
-    fn renderFn(_: Element) void {}
 };
 
 pub const Float = struct {
@@ -322,28 +321,16 @@ pub const Float = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, size_static, layout_relative, null, deleteFn),
         };
         this.element.size = rect;
         return this;
-    }
-
-    fn layoutFn(el: *Element, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.size;
-    }
-
-    fn sizeFn(el: *Element) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.size;
     }
 
     fn deleteFn(el: *Element) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
-
-    fn renderFn(_: Element) void {}
 };
 
 pub const Anchor = struct {
@@ -367,15 +354,10 @@ pub const AnchorElement = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layout_relative, null, deleteFn),
             .anchor = anchor,
         };
         return this;
-    }
-
-    fn layoutFn(el: *Element, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.size;
     }
 
     fn sizeFn(el: *Element) geom.AABB {
@@ -389,8 +371,6 @@ pub const AnchorElement = struct {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
-
-    fn renderFn(_: Element) void {}
 };
 
 pub const Center = struct {
@@ -401,7 +381,7 @@ pub const Center = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, size_fill, layoutFn, null, deleteFn),
         };
         return this;
     }
@@ -417,17 +397,10 @@ pub const Center = struct {
         return centeraabb;
     }
 
-    fn sizeFn(el: *Element) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.bounds;
-    }
-
     fn deleteFn(el: *Element) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
-
-    fn renderFn(_: Element) void {}
 };
 
 pub const Panel = struct {
@@ -439,21 +412,10 @@ pub const Panel = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, size_fill, layout_relative, renderFn, deleteFn),
             .style = style,
         };
         return this;
-    }
-
-    /// Items positioned relative to self
-    fn layoutFn(el: *Element, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.size;
-    }
-
-    fn sizeFn(el: *Element) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.bounds;
     }
 
     fn deleteFn(el: *Element) void {
@@ -478,7 +440,7 @@ pub const Sprite = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layout_relative, renderFn, deleteFn),
             .blit = blit,
         };
         this.element.size.size = this.blit.get_size();
@@ -493,12 +455,6 @@ pub const Sprite = struct {
     fn deleteFn(el: *Element) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.deinit();
-    }
-
-    fn layoutFn(el: *Element, child: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        _ = child;
-        return this.element.size;
     }
 
     fn sizeFn(el: *Element) geom.AABB {
@@ -523,7 +479,7 @@ pub const Label = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, sizeFn, layout_relative, renderFn, deleteFn),
             .style = style,
             .string = txt,
         };
@@ -538,11 +494,6 @@ pub const Label = struct {
     fn deleteFn(el: *Element) void {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.deinit();
-    }
-
-    fn layoutFn(el: *Element, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.size;
     }
 
     fn sizeFn(el: *Element) geom.AABB {
@@ -600,7 +551,7 @@ pub const Button = struct {
         panel.element.appendChild(&centerel.element);
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, renderFn, deleteFn),
+            .element = Element.init(this, size_fill, layout_relative, null, deleteFn),
             .label = label,
             .panel = panel,
             .stylesheet = style,
@@ -642,16 +593,4 @@ pub const Button = struct {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.deinit();
     }
-
-    fn layoutFn(el: *Element, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.size;
-    }
-
-    fn sizeFn(el: *Element) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return this.element.bounds;
-    }
-
-    fn renderFn(_: Element) void {}
 };
