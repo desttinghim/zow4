@@ -16,22 +16,21 @@ var fba: std.heap.FixedBufferAllocator = undefined;
 var alloc: std.mem.Allocator = undefined;
 var bubbles: *Sprite = undefined;
 var stage: *Stage = undefined;
-var float: *ui.Float = undefined;
+var float: *ui.Element = undefined;
 
 var grabbed: ?*ui.Element = null;
 var grab_point: ?geom.Vec2 = null;
 
 fn float_drag(el: *ui.Element, event: ui.Event) void {
-    const this = @ptrCast(*ui.Float, @alignCast(@alignOf(ui.Float), el.self));
     switch (event) {
         .MouseReleased => |_| {
             grabbed = null;
             grab_point = null;
         },
         .MousePressed => |pos| {
-            const diff = pos - this.element.size.pos;
+            const diff = pos - el.size.pos;
             grab_point = diff;
-            grabbed = &this.element;
+            grabbed = el;
         },
         .MouseClicked => |_| {
             float_hide();
@@ -42,15 +41,15 @@ fn float_drag(el: *ui.Element, event: ui.Event) void {
 }
 
 fn float_show() void {
-    float.element.hidden = false;
+    float.hidden = false;
 }
 
 fn float_hide() void {
-    float.element.hidden = true;
+    float.hidden = true;
 }
 
 fn float_toggle() void {
-    float.element.hidden = !float.element.hidden;
+    float.hidden = !float.hidden;
 }
 
 export fn start() void {
@@ -59,41 +58,56 @@ export fn start() void {
 
     stage = Stage.new(alloc) catch @panic("creating stage");
 
-    float = ui.Float.new(alloc, geom.AABB.init(32, 32, 120, 120)) catch @panic("creating anchorEl");
-    float.element.listen(float_drag);
-    stage.element.appendChild(&float.element);
+    float = stage.float(geom.AABB.init(32, 32, 120, 120)) catch @panic("creating anchorEl");
+    float.listen(float_drag);
+    stage.element.appendChild(float);
 
-    var menubar = ui.Float.new(alloc, geom.AABB.init(0, 0, 160, 16)) catch @panic("creating menubar");
-    stage.element.appendChild(&menubar.element);
+    var menubar = stage.float(geom.AABB.init(0, 0, 160, 16)) catch @panic("creating menubar");
+    stage.element.appendChild(menubar);
 
-    var hlist = ui.HList.new(alloc) catch @panic("hlist");
-    menubar.element.appendChild(&hlist.element);
+    var hlist = stage.hdiv() catch @panic("hlist");
+    menubar.appendChild(hlist);
 
     var btn1 = ui.Button.new(alloc, ui.DefaultStyle, "Show", float_show) catch @panic("creating button");
-    hlist.element.appendChild(&btn1.element);
+    hlist.appendChild(&btn1.element);
     var btn2 = ui.Button.new(alloc, ui.DefaultStyle, "Hide", float_hide) catch @panic("creating button");
-    hlist.element.appendChild(&btn2.element);
+    hlist.appendChild(&btn2.element);
     var btn3 = ui.Button.new(alloc, ui.DefaultStyle, "Toggle", float_toggle) catch @panic("creating button");
-    hlist.element.appendChild(&btn3.element);
+    hlist.appendChild(&btn3.element);
 
     var panel = Panel.new(alloc, color.select(.Light, .Dark)) catch @panic("creating element");
-    float.element.appendChild(&panel.element);
+    float.appendChild(&panel.element);
 
-    var vlist = ui.VList.new(alloc) catch @panic("creating vlist");
-    panel.element.appendChild(&vlist.element);
+    var vlist = stage.vdiv() catch @panic("creating vlist");
+    panel.element.appendChild(vlist);
 
-    vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), "Click To Hide") catch @panic("creating label")).element) catch @panic("centering"));
+    {
+        var center = stage.center() catch @panic("center");
+        var label = ui.Label.new(alloc, color.fill(.Dark), "Click To Hide") catch @panic("creating label");
+        center.appendChild(&label.element);
+        vlist.appendChild(center);
+    }
 
-    const elsize = std.fmt.allocPrint(alloc, "{}", .{ @sizeOf(ui.Element) }) catch @panic("alloc");
-    vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), elsize) catch @panic("creating label")).element) catch @panic("centering"));
+    {
+        const elsize = std.fmt.allocPrint(alloc, "{}", .{ @sizeOf(ui.Element) }) catch @panic("alloc");
+        var center = stage.center() catch @panic("center");
+        var label = ui.Label.new(alloc, color.fill(.Dark), elsize) catch @panic("creating label");
+        center.appendChild(&label.element);
+        vlist.appendChild(center);
+    }
 
-    var center = ui.Center.new(alloc) catch @panic("creating center element");
-    vlist.element.appendChild(&center.element);
-    const blit = zow4.draw.Blit.init(0x0004, &bubbles_bmp, .{ .bpp = .b1 });
-    bubbles = Sprite.new(alloc, blit) catch @panic("sprite");
-    center.element.appendChild(&bubbles.element);
-
-    vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), "Drag To Move") catch @panic("creating label")).element) catch @panic("centering"));
+    {
+        var center = stage.center() catch @panic("center");
+        vlist.appendChild(center);
+        bubbles = Sprite.new(alloc, .{.style = 0x0004, .bmp = &bubbles_bmp }) catch @panic("sprite");
+        center.appendChild(&bubbles.element);
+    }
+    {
+        var center = stage.center() catch @panic("center");
+        var label = ui.Label.new(alloc, color.fill(.Dark), "Drag To Move") catch @panic("creating label");
+        center.appendChild(&label.element);
+        vlist.appendChild(center);
+    }
 
     stage.layout();
 }

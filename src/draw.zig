@@ -85,8 +85,8 @@ pub const color = struct {
 // Object to render bitmap
 pub const Blit = struct {
     bmp: *const Bitmap,
-    rect: union(enum) { full, aabb: geom.AABB },
-    flags: BlitFlags,
+    rect: union(enum) { full, aabb: geom.AABB } = .full,
+    flags: BlitFlags = .{.bpp = .b1},
     style: u16,
 
     pub fn init(style: u16, bitmap: *const Bitmap, flags: BlitFlags) @This() {

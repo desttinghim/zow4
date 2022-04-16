@@ -66,6 +66,39 @@ pub fn vec2fToVec2(vec2f: Vec2f) Vec2 {
     return Vec2{ @floatToInt(i32, @floor(vec2f[0])), @floatToInt(i32, @floor(vec2f[1])) };
 }
 
+pub const Rect = struct {
+    top: i32,
+    left: i32,
+    right: i32,
+    bottom: i32,
+
+    pub fn init_sizev(posi: Vec2, sizei: Vec2) @This() {
+        return @This(){
+            .left = posi[v.x],
+            .right = posi[v.x] + sizei[v.x],
+            .top = posi[v.y],
+            .bottom = posi[v.y] + sizei[v.y],
+        };
+    }
+
+    pub fn empty() @This() {
+        return @This(){
+            .top = 0,
+            .left = 0,
+            .right = 0,
+            .bottom = 0,
+        };
+    }
+
+    pub fn pos(this: @This()) Vec2 {
+        return Vec2{ this.left, this.top };
+    }
+
+    pub fn size(this: @This()) Vec2 {
+        return Vec2{ this.right - this.left, this.bottom - this.top };
+    }
+};
+
 pub const AABB = struct {
     pos: Vec2,
     size: Vec2,
@@ -88,6 +121,11 @@ pub const AABB = struct {
     pub fn bottom_right(this: @This()) Vec2 {
         return this.pos + this.size;
     }
+    // pub fn rect(this: @This()) Rect {
+    //     return .{
+    //         .
+    //     }
+    // }
 
     pub fn init(x: i32, y: i32, w: i32, h: i32) @This() {
         return @This(){

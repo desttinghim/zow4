@@ -18,12 +18,6 @@ pub const Event = union(enum) {
     MouseLeave,
 };
 
-pub fn center(alloc: std.mem.Allocator, el: *Element) !*Element {
-    var centerEl = try Center.new(alloc);
-    centerEl.element.appendChild(el);
-    return &centerEl.element;
-}
-
 /// Fill entire available space
 fn size_fill(_: *Element, bounds: geom.AABB) geom.AABB {
     return bounds;
@@ -37,6 +31,42 @@ fn size_static(el: *Element, _: geom.AABB) geom.AABB {
 /// No layout
 fn layout_relative(el: *Element, _: usize) geom.AABB {
     return el.size;
+}
+
+/// Divide vertical space equally
+fn layout_div_vertical(el: *Element, childID: usize) geom.AABB {
+    const vsize = @divTrunc(el.size.size[v.y], @intCast(i32, el.children));
+    return geom.AABB.initv(
+        el.size.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
+        geom.Vec2{ el.size.size[v.x], vsize },
+    );
+}
+
+/// Divide horizontal space equally
+fn layout_div_horizontal(el: *Element, childID: usize) geom.AABB {
+    const hsize = @divTrunc(el.size.size[v.x], @intCast(i32, el.children));
+    return geom.AABB.initv(
+        el.size.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
+        geom.Vec2{ hsize, el.size.size[v.y] },
+    );
+}
+
+/// Center component
+fn layout_center(el: *Element, childID: usize) geom.AABB {
+    const centerv = el.size.pos + @divTrunc(el.size.size, geom.Vec2{ 2, 2 });
+    var centeraabb = geom.AABB.initv(centerv, geom.Vec2{ 0, 0 });
+    if (el.getChild(childID)) |child| {
+        centeraabb.pos -= @divTrunc(child.size.size, geom.Vec2{ 2, 2 });
+        centeraabb.size = child.size.size;
+    }
+    return centeraabb;
+}
+
+/// For elements that do not have extra state
+fn delete_element(el: *Element) void {
+    // TODO: This doesn't work because elements don't store an allocator. This is something for the stage to handle.
+    _ = el;
+    // this.alloc.destroy(el);
 }
 
 // pub const Node = struct {};
@@ -86,7 +116,6 @@ pub const Element = struct {
     pub fn init(self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn, deleteFn: DeleteFn) @This() {
         return @This(){
             .self = self,
-            // .bounds = geom.AABB.init(0, 0, 160, 160),
             .size = geom.AABB.init(0, 0, 160, 160),
             .sizeFn = sizeFn,
             .layoutFn = layoutFn,
@@ -142,6 +171,7 @@ pub const Element = struct {
         this.event(ev);
     }
 
+    /// Todo
     pub fn remove(this: *@This()) void {
         if (this.child) |child| child.remove();
         if (this.prev) |prev| prev.next = this.next;
@@ -246,6 +276,31 @@ pub const Stage = struct {
         this.element.layout();
     }
 
+    pub fn hdiv(this: *@This()) !*Element {
+        var el = try this.alloc.create(Element);
+        el.* = Element.init(el, size_fill, layout_div_horizontal, null, delete_element);
+        return el;
+    }
+
+    pub fn vdiv(this: *@This()) !*Element {
+        var el = try this.alloc.create(Element);
+        el.* = Element.init(el, size_fill, layout_div_vertical, null, delete_element);
+        return el;
+    }
+
+    pub fn center(this: *@This()) !*Element {
+        var el = try this.alloc.create(Element);
+        el.* = Element.init(el, size_fill, layout_center, null, delete_element);
+        return el;
+    }
+
+    pub fn float(this: *@This(), rect: geom.AABB) !*Element {
+        var el = try this.alloc.create(Element);
+        el.* = Element.init(el, size_static, layout_relative, null, delete_element);
+        el.size = rect;
+        return el;
+    }
+
     pub fn new(alloc: std.mem.Allocator) !*@This() {
         const this = try alloc.create(@This());
         this.* = @This(){
@@ -258,82 +313,6 @@ pub const Stage = struct {
     /// Draws all children with no offset or constraints
     fn layoutFn(_: *Element, _: usize) geom.AABB {
         return geom.AABB.init(0, 0, 160, 160);
-    }
-
-    fn deleteFn(el: *Element) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        this.alloc.destroy(this);
-    }
-};
-
-pub const VList = struct {
-    alloc: std.mem.Allocator,
-    element: Element,
-
-    pub fn new(alloc: std.mem.Allocator) !*@This() {
-        const this = try alloc.create(@This());
-        this.* = @This(){
-            .alloc = alloc,
-            .element = Element.init(this, size_fill, layoutFn, null, deleteFn),
-        };
-        return this;
-    }
-
-    fn layoutFn(el: *Element, childID: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const vsize = @divTrunc(this.element.size.size[v.y], @intCast(i32, this.element.children));
-        return geom.AABB.initv(
-            this.element.size.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
-            geom.Vec2{ this.element.size.size[v.x], vsize },
-        );
-    }
-
-    fn deleteFn(el: *Element) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        this.alloc.destroy(this);
-    }
-};
-
-pub const HList = struct {
-    alloc: std.mem.Allocator,
-    element: Element,
-
-    pub fn new(alloc: std.mem.Allocator) !*@This() {
-        const this = try alloc.create(@This());
-        this.* = @This(){
-            .alloc = alloc,
-            .element = Element.init(this, size_fill, layoutFn, null, deleteFn),
-        };
-        return this;
-    }
-
-    fn layoutFn(el: *Element, childID: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const hsize = @divTrunc(this.element.size.size[v.x], @intCast(i32, this.element.children));
-        return geom.AABB.initv(
-            this.element.size.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
-            geom.Vec2{ hsize, this.element.size.size[v.y] },
-        );
-    }
-
-    fn deleteFn(el: *Element) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        this.alloc.destroy(this);
-    }
-};
-
-pub const Float = struct {
-    alloc: std.mem.Allocator,
-    element: Element,
-
-    pub fn new(alloc: std.mem.Allocator, rect: geom.AABB) !*@This() {
-        const this = try alloc.create(@This());
-        this.* = @This(){
-            .alloc = alloc,
-            .element = Element.init(this, size_static, layout_relative, null, deleteFn),
-        };
-        this.element.size = rect;
-        return this;
     }
 
     fn deleteFn(el: *Element) void {
