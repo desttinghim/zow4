@@ -25,12 +25,12 @@ pub fn center(alloc: std.mem.Allocator, el: *Element) !*Element {
 }
 
 /// Fill entire available space
-fn size_fill(el: *Element) geom.AABB {
-    return el.bounds;
+fn size_fill(_: *Element, bounds: geom.AABB) geom.AABB {
+    return bounds;
 }
 
 /// Size is preset
-fn size_static(el: *Element) geom.AABB {
+fn size_static(el: *Element, _: geom.AABB) geom.AABB {
     return el.size;
 }
 
@@ -39,12 +39,25 @@ fn layout_relative(el: *Element, _: usize) geom.AABB {
     return el.size;
 }
 
+// pub const Node = struct {};
+
+// pub const Leaf = struct {
+//     hidden: bool = false,
+//     hover: bool = false,
+//     self: *anyopaque,
+//     size: geom.AABB,
+//     next: ?*@This() = null,
+
+//     sizeFn: SizeFn,
+//     deleteFn: DeleteFn,
+//     eventFn: ?EventCB,
+//     renderFn: ?RenderFn,
+// };
+
 pub const Element = struct {
     hidden: bool = false,
     hover: bool = false,
     self: *anyopaque,
-    /// Space that the element is allowed to take up
-    bounds: geom.AABB,
     /// Space that the element takes up
     size: geom.AABB,
     children: usize = 0,
@@ -60,7 +73,7 @@ pub const Element = struct {
     deleteFn: DeleteFn,
 
     /// Passed self, bounding box, and returns a size
-    const SizeFn = fn (*Element) geom.AABB;
+    const SizeFn = fn (*Element, geom.AABB) geom.AABB;
     /// Passed self number of children, and child number, returns bounds to be passed to size
     const LayoutFn = fn (*Element, usize) geom.AABB;
     /// Event
@@ -73,7 +86,7 @@ pub const Element = struct {
     pub fn init(self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn, deleteFn: DeleteFn) @This() {
         return @This(){
             .self = self,
-            .bounds = geom.AABB.init(0, 0, 160, 160),
+            // .bounds = geom.AABB.init(0, 0, 160, 160),
             .size = geom.AABB.init(0, 0, 160, 160),
             .sizeFn = sizeFn,
             .layoutFn = layoutFn,
@@ -136,16 +149,16 @@ pub const Element = struct {
         this.deleteFn();
     }
 
-    pub fn compute_size(this: *@This()) void {
-        this.size = this.sizeFn(this);
+    pub fn compute_size(this: *@This(), bounds: geom.AABB) void {
+        this.size = this.sizeFn(this, bounds);
     }
 
     pub fn layout(this: *@This()) void {
         var child_opt = this.child;
         var i: usize = 0;
         while (child_opt) |child| : (i += 1) {
-            child.bounds = this.layoutFn(this, i);
-            child.compute_size();
+            const bounds = this.layoutFn(this, i);
+            child.compute_size(bounds);
             child.layout();
             child_opt = child.next;
         }
@@ -229,7 +242,7 @@ pub const Stage = struct {
     }
 
     pub fn layout(this: *@This()) void {
-        this.element.compute_size();
+        this.element.compute_size(geom.AABB.init(0, 0, 160, 160));
         this.element.layout();
     }
 
@@ -237,17 +250,13 @@ pub const Stage = struct {
         const this = try alloc.create(@This());
         this.* = @This(){
             .alloc = alloc,
-            .element = Element.init(this, sizeFn, layoutFn, null, deleteFn),
+            .element = Element.init(this, size_static, layoutFn, null, deleteFn),
         };
         return this;
     }
 
     /// Draws all children with no offset or constraints
     fn layoutFn(_: *Element, _: usize) geom.AABB {
-        return geom.AABB.init(0, 0, 160, 160);
-    }
-
-    fn sizeFn(_: *Element) geom.AABB {
         return geom.AABB.init(0, 0, 160, 160);
     }
 
@@ -272,10 +281,10 @@ pub const VList = struct {
 
     fn layoutFn(el: *Element, childID: usize) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const vsize = @divTrunc(this.element.bounds.size[v.y], @intCast(i32, this.element.children));
+        const vsize = @divTrunc(this.element.size.size[v.y], @intCast(i32, this.element.children));
         return geom.AABB.initv(
-            this.element.bounds.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
-            geom.Vec2{ this.element.bounds.size[v.x], vsize },
+            this.element.size.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
+            geom.Vec2{ this.element.size.size[v.x], vsize },
         );
     }
 
@@ -300,10 +309,10 @@ pub const HList = struct {
 
     fn layoutFn(el: *Element, childID: usize) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const hsize = @divTrunc(this.element.bounds.size[v.x], @intCast(i32, this.element.children));
+        const hsize = @divTrunc(this.element.size.size[v.x], @intCast(i32, this.element.children));
         return geom.AABB.initv(
-            this.element.bounds.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
-            geom.Vec2{ hsize, this.element.bounds.size[v.y] },
+            this.element.size.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
+            geom.Vec2{ hsize, this.element.size.size[v.y] },
         );
     }
 
@@ -388,7 +397,7 @@ pub const Center = struct {
 
     fn layoutFn(el: *Element, childID: usize) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const centerv = this.element.bounds.pos + @divTrunc(this.element.bounds.size, geom.Vec2{ 2, 2 });
+        const centerv = this.element.size.pos + @divTrunc(this.element.size.size, geom.Vec2{ 2, 2 });
         var centeraabb = geom.AABB.initv(centerv, geom.Vec2{ 0, 0 });
         if (this.element.getChild(childID)) |child| {
             centeraabb.pos -= @divTrunc(child.size.size, geom.Vec2{ 2, 2 });
@@ -457,9 +466,8 @@ pub const Sprite = struct {
         this.deinit();
     }
 
-    fn sizeFn(el: *Element) geom.AABB {
+    fn sizeFn(el: *Element, bounds: geom.AABB) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const bounds = this.element.bounds;
         return geom.AABB.initv(bounds.pos, this.blit.get_size());
     }
 
@@ -496,9 +504,9 @@ pub const Label = struct {
         this.deinit();
     }
 
-    fn sizeFn(el: *Element) geom.AABB {
+    fn sizeFn(el: *Element, bounds: geom.AABB) geom.AABB {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        return geom.AABB.initv(this.element.bounds.pos, text.text_size(this.string));
+        return geom.AABB.initv(bounds.pos, text.text_size(this.string));
     }
 
     fn renderFn(el: Element) void {
