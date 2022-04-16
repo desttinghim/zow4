@@ -21,8 +21,8 @@ var float: *ui.Float = undefined;
 var grabbed: ?*ui.Element = null;
 var grab_point: ?geom.Vec2 = null;
 
-fn float_drag(ptr: *anyopaque, event: ui.Event) void {
-    const this = @ptrCast(*ui.Float, @alignCast(@alignOf(ui.Float), ptr));
+fn float_drag(el: *ui.Element, event: ui.Event) void {
+    const this = @ptrCast(*ui.Float, @alignCast(@alignOf(ui.Float), el.self));
     switch (event) {
         .MouseReleased => |_| {
             grabbed = null;
@@ -83,6 +83,9 @@ export fn start() void {
     panel.element.appendChild(&vlist.element);
 
     vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), "Click To Hide") catch @panic("creating label")).element) catch @panic("centering"));
+
+    const elsize = std.fmt.allocPrint(alloc, "{}", .{ @sizeOf(ui.Element) }) catch @panic("alloc");
+    vlist.element.appendChild(ui.center(alloc, &(ui.Label.new(alloc, color.fill(.Dark), elsize) catch @panic("creating label")).element) catch @panic("centering"));
 
     var center = ui.Center.new(alloc) catch @panic("creating center element");
     vlist.element.appendChild(&center.element);

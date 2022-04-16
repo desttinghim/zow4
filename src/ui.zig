@@ -18,24 +18,6 @@ pub const Event = union(enum) {
     MouseLeave,
 };
 
-fn button_callback(ptr: *anyopaque, event: Event) void {
-    const this = @ptrCast(*Panel, @alignCast(@alignOf(Panel), ptr));
-    switch (event) {
-        .MousePressed => |_| {
-            this.style = draw.color.select(.Dark, .Dark);
-        },
-        .MouseEnter,
-        .MouseReleased,
-        => {
-            this.style = draw.color.select(.Light, .Dark);
-        },
-        .MouseLeave => {
-            this.style = draw.color.select(.Light, .Light);
-        },
-        else => {},
-    }
-}
-
 pub fn center(alloc: std.mem.Allocator, el: *Element) !*Element {
     var centerEl = try Center.new(alloc);
     centerEl.element.appendChild(el);
@@ -43,9 +25,9 @@ pub fn center(alloc: std.mem.Allocator, el: *Element) !*Element {
 }
 
 pub const Element = struct {
-    self: *anyopaque,
     hidden: bool = false,
     hover: bool = false,
+    self: *anyopaque,
     /// Space that the element is allowed to take up
     bounds: geom.AABB,
     /// Space that the element takes up
@@ -63,15 +45,15 @@ pub const Element = struct {
     deleteFn: DeleteFn,
 
     /// Passed self, bounding box, and returns a size
-    const SizeFn = fn (*anyopaque) geom.AABB;
+    const SizeFn = fn (*Element) geom.AABB;
     /// Passed self number of children, and child number, returns bounds to be passed to size
-    const LayoutFn = fn (*anyopaque, usize) geom.AABB;
+    const LayoutFn = fn (*Element, usize) geom.AABB;
     /// Event
-    const EventCB = fn (*anyopaque, Event) void;
+    const EventCB = fn (*Element, Event) void;
     /// Draws element to the screen
-    const RenderFn = fn (*anyopaque) void;
+    const RenderFn = fn (Element) void;
     /// Frees element from memory
-    const DeleteFn = fn (*anyopaque) void;
+    const DeleteFn = fn (*Element) void;
 
     pub fn init(self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: RenderFn, deleteFn: DeleteFn) @This() {
         return @This(){
@@ -105,7 +87,7 @@ pub const Element = struct {
 
     fn event(this: *@This(), ev: Event) void {
         if (this.eventFn) |cb| {
-            cb(this.self, ev);
+            cb(this, ev);
         }
     }
 
@@ -140,14 +122,14 @@ pub const Element = struct {
     }
 
     pub fn compute_size(this: *@This()) void {
-        this.size = this.sizeFn(this.self);
+        this.size = this.sizeFn(this);
     }
 
     pub fn layout(this: *@This()) void {
         var child_opt = this.child;
         var i: usize = 0;
         while (child_opt) |child| : (i += 1) {
-            child.bounds = this.layoutFn(this.self, i);
+            child.bounds = this.layoutFn(this, i);
             child.compute_size();
             child.layout();
             child_opt = child.next;
@@ -180,29 +162,25 @@ pub const Element = struct {
     }
 
     pub fn appendChild(this: *@This(), el: *@This()) void {
-        if (this.child) |child| {
-            child.append(el);
+        el.parent = this;
+        this.children += 1;
+
+        var child_opt = this.child;
+        while (child_opt) |child| {
+            if (child.next) |next| {
+                child_opt = next;
+            } else {
+                child.next = el;
+                break; // prevent else block
+            }
         } else {
             this.child = el;
-            el.parent = this;
-            this.children += 1;
-        }
-    }
-
-    pub fn append(this: *@This(), el: *@This()) void {
-        if (this.next) |next| {
-            next.append(el);
-        } else {
-            this.next = el;
-            el.prev = this;
-            el.parent = this.parent;
-            el.parent.?.children += 1;
         }
     }
 
     pub fn render(this: @This()) void {
         if (!this.hidden) {
-            this.renderFn(this.self);
+            this.renderFn(this);
             if (this.child) |child| child.render();
         }
         if (this.next) |next| next.render();
@@ -250,20 +228,20 @@ pub const Stage = struct {
     }
 
     /// Draws all children with no offset or constraints
-    fn layoutFn(_: *anyopaque, _: usize) geom.AABB {
+    fn layoutFn(_: *Element, _: usize) geom.AABB {
         return geom.AABB.init(0, 0, 160, 160);
     }
 
-    fn sizeFn(_: *anyopaque) geom.AABB {
+    fn sizeFn(_: *Element) geom.AABB {
         return geom.AABB.init(0, 0, 160, 160);
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
 
 pub const VList = struct {
@@ -279,8 +257,8 @@ pub const VList = struct {
         return this;
     }
 
-    fn layoutFn(ptr: *anyopaque, childID: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, childID: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         const vsize = @divTrunc(this.element.bounds.size[v.y], @intCast(i32, this.element.children));
         return geom.AABB.initv(
             this.element.bounds.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
@@ -288,17 +266,17 @@ pub const VList = struct {
         );
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.bounds;
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
 
 pub const HList = struct {
@@ -314,8 +292,8 @@ pub const HList = struct {
         return this;
     }
 
-    fn layoutFn(ptr: *anyopaque, childID: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, childID: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         const hsize = @divTrunc(this.element.bounds.size[v.x], @intCast(i32, this.element.children));
         return geom.AABB.initv(
             this.element.bounds.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
@@ -323,17 +301,17 @@ pub const HList = struct {
         );
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.bounds;
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
 
 pub const Float = struct {
@@ -350,22 +328,22 @@ pub const Float = struct {
         return this;
     }
 
-    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.size;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.size;
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
 
 pub const Anchor = struct {
@@ -395,24 +373,24 @@ pub const AnchorElement = struct {
         return this;
     }
 
-    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.size;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         var pos = this.element.bounds.top_left() + this.anchor.top_left;
         var size = this.element.bounds.bottom_right() + (this.anchor.bottom_right) - pos;
         return geom.AABB{ .pos = pos, .size = size };
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
 
 pub const Center = struct {
@@ -428,8 +406,8 @@ pub const Center = struct {
         return this;
     }
 
-    fn layoutFn(ptr: *anyopaque, childID: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, childID: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         const centerv = this.element.bounds.pos + @divTrunc(this.element.bounds.size, geom.Vec2{ 2, 2 });
         var centeraabb = geom.AABB.initv(centerv, geom.Vec2{ 0, 0 });
         if (this.element.getChild(childID)) |child| {
@@ -439,17 +417,17 @@ pub const Center = struct {
         return centeraabb;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.bounds;
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
 
 pub const Panel = struct {
@@ -468,23 +446,23 @@ pub const Panel = struct {
     }
 
     /// Items positioned relative to self
-    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.size;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.bounds;
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.alloc.destroy(this);
     }
 
-    fn renderFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn renderFn(el: Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         const rect = this.element.size;
         w4.DRAW_COLORS.* = this.style;
         w4.rect(rect.pos[v.x], rect.pos[v.y], @intCast(u32, rect.size[v.x]), @intCast(u32, rect.size[v.y]));
@@ -512,25 +490,25 @@ pub const Sprite = struct {
         this.alloc.destroy(this);
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.deinit();
     }
 
-    fn layoutFn(ptr: *anyopaque, child: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, child: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         _ = child;
         return this.element.size;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         const bounds = this.element.bounds;
         return geom.AABB.initv(bounds.pos, this.blit.get_size());
     }
 
-    fn renderFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn renderFn(el: Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.blit.blit(this.element.size.pos);
     }
 };
@@ -557,23 +535,23 @@ pub const Label = struct {
         this.alloc.destroy(this);
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.deinit();
     }
 
-    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.size;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return geom.AABB.initv(this.element.bounds.pos, text.text_size(this.string));
     }
 
-    fn renderFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn renderFn(el: Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         w4.DRAW_COLORS.* = this.style;
         draw.text(this.string, this.element.size.pos);
     }
@@ -633,8 +611,8 @@ pub const Button = struct {
         return this;
     }
 
-    fn eventFn(ptr: *anyopaque, event: Event) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn eventFn(el: *Element, event: Event) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         switch (event) {
             .MousePressed => |_| {
                 this.label.style = this.stylesheet.click.label;
@@ -660,20 +638,20 @@ pub const Button = struct {
         this.alloc.destroy(this);
     }
 
-    fn deleteFn(ptr: *anyopaque) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn deleteFn(el: *Element) void {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.deinit();
     }
 
-    fn layoutFn(ptr: *anyopaque, _: usize) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn layoutFn(el: *Element, _: usize) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.size;
     }
 
-    fn sizeFn(ptr: *anyopaque) geom.AABB {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), ptr));
+    fn sizeFn(el: *Element) geom.AABB {
+        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         return this.element.bounds;
     }
 
-    fn renderFn(_: *anyopaque) void {}
+    fn renderFn(_: Element) void {}
 };
