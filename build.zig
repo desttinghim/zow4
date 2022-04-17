@@ -84,6 +84,10 @@ pub fn build(b: *std.build.Builder) void {
     const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
     example.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-example", example);
+
+    const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
+    counter.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-counter", counter);
 }
 
 fn tests(b: *std.build.Builder, mode: std.builtin.Mode) !void {
