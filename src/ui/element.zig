@@ -1,5 +1,6 @@
 const std = @import("std");
 const ui = @import("../ui.zig");
+const w4 = @import("wasm4");
 const geom = @import("../geometry.zig");
 const Input = @import("../input.zig");
 const v = geom.Vec;
@@ -55,53 +56,78 @@ pub const Element = struct {
     }
 
     pub fn update(this: *@This()) void {
-        if (this.size.contains(Input.mousepos())) {
-            if (!this.hover) {
-                this.hover = true;
-                this.ctx.dispatch(this, .MouseEnter);
+        if (!this.size.contains(Input.mousepos())) {
+            if (this.hover) {
+                this.ctx.dispatch(this, .MouseLeave);
+                this.hover = false;
             }
-        } else {
-            this.ctx.dispatch(this, .MouseLeave);
-            this.hover = false;
         }
         this.clicked -|= 1;
         if (this.child) |child| child.update();
         if (this.next) |next| next.update();
     }
 
-    pub fn bubble(this: *@This(), ev: EventData) void {
+    pub fn find_top(this: *@This(), pos: geom.Vec2) ?*@This() {
+        if (!this.size.contains(pos)) return null;
+        var candidate: ?*@This() = this;
         var child_opt = this.child;
-        var i: usize = 0;
         while (child_opt) |child| : (child_opt = child.next) {
-            if (child.hidden) {
-                i += 1;
-                continue;
-            }
-            switch (ev) {
-                .MouseClicked => |pos| {
-                    this.clicked = 15;
-                    if (child.size.contains(pos)) child.bubble(ev);
-                },
-                .MouseMoved,
-                .MousePressed,
-                .MouseReleased,
-                => |pos| {
-                    if (child.size.contains(pos)) child.bubble(ev);
-                },
-                else => child.bubble(ev),
-            }
-            i += 1;
+            if (child.hidden) continue;
+            if (child.size.contains(pos))
+                candidate = child.find_top(pos);
+        }
+        return candidate;
+    }
+
+    pub fn bubble_up(this: *@This(), ev: EventData) void {
+        switch (ev) {
+            .MouseMoved => if (!this.hover) {
+                this.hover = true;
+                this.ctx.dispatch(this, .MouseEnter);
+            },
+            else => {},
         }
         this.ctx.dispatch(this, ev);
+
+        if (this.parent) |parent| {
+            parent.bubble_up(ev);
+        }
     }
 
     pub fn remove(this: *@This()) void {
-        // TODO
+        this.detach();
         if (this.child) |child| child.remove();
-        if (this.prev) |prev| prev.next = this.next;
-        if (this.parent) |parent| parent.children -= 1;
         this.ctx.unlisten_all(this);
         this.ctx.alloc.destroy(this.self);
+    }
+
+    pub fn detach(this: *@This()) void {
+        var next_opt = this.next;
+        if (this.next) |next| {
+            if (next == this.prev) this.prev = null;
+            next.prev = this.prev;
+        }
+        this.next = null;
+        if (this.prev) |prev| {
+            if (prev != this.next)
+                prev.next = next_opt;
+        }
+        this.prev = null;
+        if (this.parent) |parent| {
+            if (parent.child == this) {
+                parent.child = next_opt;
+            }
+            parent.children -= 1;
+            this.parent = null;
+        }
+    }
+
+    pub fn move_to_front(this: *@This()) void {
+        var next_opt = this.next;
+        var parent_opt = this.parent;
+        if (next_opt == null) return;
+        this.detach();
+        parent_opt.?.appendChild(this);
     }
 
     pub fn compute_size(this: *@This(), bounds: geom.AABB) void {
@@ -122,13 +148,15 @@ pub const Element = struct {
     pub fn getChild(this: *@This(), num: usize) ?*@This() {
         var i: usize = 0;
         var child_opt = this.child;
-        while (child_opt) |child| : (i += 1) {
+        while (child_opt) |child| : (child_opt = child.next) {
             if (i == num) return child;
+            i += 1;
         }
         return null;
     }
 
     pub fn appendChild(this: *@This(), el: *@This()) void {
+        if (this == el) return;
         el.parent = this;
         this.children += 1;
 
@@ -138,6 +166,7 @@ pub const Element = struct {
                 child_opt = next;
             } else {
                 child.next = el;
+                el.prev = child;
                 break; // prevent else block
             }
         } else {

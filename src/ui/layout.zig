@@ -19,6 +19,17 @@ pub fn layout_relative(el: *Element, _: usize) geom.AABB {
     return el.size;
 }
 
+/// Stack elements downwards
+pub fn layout_vlist(el: *Element, childID: usize) geom.AABB {
+    if (childID == 0) {
+        return el.size;
+    }
+    if (el.getChild(childID - 1)) |child| {
+        return geom.AABB.init(el.size.left(), child.size.bottom(), el.size.right(), el.size.bottom() - child.size.bottom());
+    }
+    return el.size;
+}
+
 /// Divide vertical space equally
 pub fn layout_div_vertical(el: *Element, childID: usize) geom.AABB {
     const vsize = @divTrunc(el.size.size[v.y], @intCast(i32, el.children));

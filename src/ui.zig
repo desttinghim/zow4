@@ -62,6 +62,7 @@ pub const Stage = struct {
 
     pub fn deinit(this: *@This()) !*@This() {
         this.event_listeners.deinit();
+        this.root.remove();
         this.alloc.destroy(this);
     }
 
@@ -103,17 +104,19 @@ pub const Stage = struct {
         this.root.update();
 
         const mousepos = Input.mousepos();
-        if (Input.mousep(.left)) {
-            this.root.bubble(.{ .MousePressed = mousepos });
-        }
-        if (Input.mouser(.left)) {
-            this.root.bubble(.{ .MouseReleased = mousepos });
-        }
-        if (geom.Vec.isZero(Input.mousediff())) {
-            this.root.bubble(.{ .MouseMoved = mousepos });
-        }
-        if (Input.clickstate == .clicked) {
-            this.root.bubble(.{ .MouseClicked = mousepos });
+        if (this.root.find_top(mousepos)) |focus| {
+            if (Input.mousep(.left)) {
+                focus.bubble_up(.{ .MousePressed = mousepos });
+            }
+            if (Input.mouser(.left)) {
+                focus.bubble_up(.{ .MouseReleased = mousepos });
+            }
+            if (!geom.Vec.isZero(Input.mousediff())) {
+                focus.bubble_up(.{ .MouseMoved = mousepos });
+            }
+            if (Input.clickstate == .clicked) {
+                focus.bubble_up(.{ .MouseClicked = mousepos });
+            }
         }
     }
 
@@ -130,6 +133,12 @@ pub const Stage = struct {
     pub fn vdiv(this: *@This()) !*Element {
         var el = try this.alloc.create(Element);
         el.* = Element.init(this, el, layout.size_fill, layout.layout_div_vertical, null);
+        return el;
+    }
+
+    pub fn vlist(this: *@This()) !*Element {
+        var el = try this.alloc.create(Element);
+        el.* = Element.init(this, el, layout.size_fill, layout.layout_vlist, null);
         return el;
     }
 

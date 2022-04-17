@@ -31,6 +31,7 @@ fn float_pressed(el: *ui.Element, event: ui.EventData) void {
     const diff = pos - el.size.pos;
     grab_point = diff;
     grabbed = el;
+    el.move_to_front();
 }
 
 fn float_delete(el: *ui.Element, _: ui.EventData) void {
@@ -82,14 +83,14 @@ export fn start() void {
     var panel = stage.panel() catch @panic("creating element");
     float.appendChild(panel);
 
-    var vlist = stage.vdiv() catch @panic("creating vlist");
-    panel.appendChild(vlist);
+    var vdiv = stage.vdiv() catch @panic("creating vdiv");
+    panel.appendChild(vdiv);
 
     {
         var center = stage.center() catch @panic("center");
         var label = stage.label("Click To Hide") catch @panic("creating label");
         center.appendChild(label);
-        vlist.appendChild(center);
+        vdiv.appendChild(center);
     }
 
     {
@@ -97,12 +98,12 @@ export fn start() void {
         var center = stage.center() catch @panic("center");
         var label = stage.label(elsize) catch @panic("creating label");
         center.appendChild(label);
-        vlist.appendChild(center);
+        vdiv.appendChild(center);
     }
 
     {
         var center = stage.center() catch @panic("center");
-        vlist.appendChild(center);
+        vdiv.appendChild(center);
         bubbles = stage.sprite(.{ .style = 0x0004, .bmp = &bubbles_bmp }) catch @panic("sprite");
         center.appendChild(bubbles);
     }
@@ -110,8 +111,40 @@ export fn start() void {
         var center = stage.center() catch @panic("center");
         var label = stage.label("Drag To Move") catch @panic("creating label");
         center.appendChild(label);
-        vlist.appendChild(center);
+        vdiv.appendChild(center);
     }
+
+    var float2 = stage.float(geom.AABB.init(20, 120, 120, 120)) catch @panic("creating anchorEl");
+    float2.listen(.MousePressed, float_pressed);
+    float2.listen(.MouseReleased, float_release);
+    stage.root.appendChild(float2);
+
+    var panel2 = stage.panel() catch @panic("creating element");
+    float2.appendChild(panel2);
+
+    var vlist = stage.vlist() catch @panic("creating vlist");
+    panel2.appendChild(vlist);
+
+    {
+        var label = stage.label("Click To Hide") catch @panic("creating label");
+        vlist.appendChild(label);
+    }
+
+    {
+        const elsize = std.fmt.allocPrint(alloc, "{}", .{@sizeOf(ui.Element)}) catch @panic("alloc");
+        var label = stage.label(elsize) catch @panic("creating label");
+        vlist.appendChild(label);
+    }
+
+    {
+        var bubbles2 = stage.sprite(.{ .style = 0x0004, .bmp = &bubbles_bmp }) catch @panic("sprite");
+        vlist.appendChild(bubbles2);
+    }
+    {
+        var label = stage.label("Drag To Move") catch @panic("creating label");
+        vlist.appendChild(label);
+    }
+    w4.trace("here init?");
 }
 
 export fn update() void {
