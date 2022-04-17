@@ -33,6 +33,10 @@ fn float_pressed(el: *ui.Element, event: ui.EventData) void {
     grabbed = el;
 }
 
+fn float_delete(el: *ui.Element, _: ui.EventData) void {
+    el.remove();
+}
+
 fn float_show(_: *ui.Element, _: ui.EventData) void {
     float.hidden = false;
 }

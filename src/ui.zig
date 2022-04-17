@@ -74,10 +74,11 @@ fn layout_center(el: *Element, childID: usize) geom.AABB {
 pub const Element = struct {
     hidden: bool = false,
     hover: bool = false,
+    clicked: u8 = 0,
+    style: union(enum) { static: PaintStyle, rule: fn (Element, PaintStyle) PaintStyle } = .{ .static = .background },
+    children: u8 = 0,
     self: *anyopaque,
     /// Space that the element takes up
-    size: geom.AABB,
-    children: usize = 0,
     ctx: *Stage,
     prev: ?*@This() = null,
     next: ?*@This() = null,
@@ -87,15 +88,14 @@ pub const Element = struct {
     sizeFn: SizeFn,
     layoutFn: LayoutFn,
     renderFn: ?RenderFn,
+    size: geom.AABB,
 
     /// Passed self, bounding box, and returns a size
     const SizeFn = fn (*Element, geom.AABB) geom.AABB;
     /// Passed self number of children, and child number, returns bounds to be passed to size
     const LayoutFn = fn (*Element, usize) geom.AABB;
-    /// Event
-    const EventCB = fn (*Element, EventData) void;
     /// Draws element to the screen
-    const RenderFn = fn (Element) void;
+    const RenderFn = fn (Element, PaintStyle) PaintStyle;
 
     pub fn init(ctx: *Stage, self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn) @This() {
         return @This(){
@@ -126,6 +126,7 @@ pub const Element = struct {
             this.ctx.dispatch(this, .MouseLeave);
             this.hover = false;
         }
+        if (this.clicked > 0) this.clicked -= 1;
         if (this.child) |child| child.update();
         if (this.next) |next| next.update();
     }
@@ -139,10 +140,13 @@ pub const Element = struct {
                 continue;
             }
             switch (ev) {
+                .MouseClicked => |pos| {
+                    this.clicked = 15;
+                    if (child.size.contains(pos)) child.bubble(ev);
+                },
                 .MouseMoved,
                 .MousePressed,
                 .MouseReleased,
-                .MouseClicked,
                 => |pos| {
                     if (child.size.contains(pos)) child.bubble(ev);
                 },
@@ -158,7 +162,8 @@ pub const Element = struct {
         if (this.child) |child| child.remove();
         if (this.prev) |prev| prev.next = this.next;
         if (this.parent) |parent| parent.children -= 1;
-        this.ctx.destroy(this.self);
+        this.ctx.unlisten_all(this);
+        this.ctx.alloc.destroy(this.self);
     }
 
     pub fn compute_size(this: *@This(), bounds: geom.AABB) void {
@@ -174,22 +179,6 @@ pub const Element = struct {
             child.layout();
             child_opt = child.next;
         }
-    }
-
-    const Self = @This();
-    pub const ChildIter = struct {
-        child_opt: ?*Self,
-        pub fn next(this: @This()) ?*Self {
-            if (this.child_opt) |child| {
-                this.child_opt = this.child_opt.next;
-                return child;
-            }
-            return null;
-        }
-    };
-
-    pub fn childIter(this: *@This()) ChildIter {
-        return .{ .child_opt = this.child };
     }
 
     pub fn getChild(this: *@This(), num: usize) ?*@This() {
@@ -218,41 +207,53 @@ pub const Element = struct {
         }
     }
 
-    pub fn render(this: @This()) void {
+    pub fn render(this: @This(), parent_style: PaintStyle) void {
         if (!this.hidden) {
-            if (this.renderFn) |rfn| rfn(this);
-            if (this.child) |child| child.render();
+            const style = if (this.renderFn) |rfn| rfn(this, parent_style) else parent_style;
+            if (this.child) |child| child.render(style);
         }
-        if (this.next) |next| next.render();
+        if (this.next) |next| next.render(parent_style);
     }
 };
 
+pub const PaintStyle = union(enum) {
+    background,
+    foreground,
+    frame,
+
+    fn to_style(this: @This()) u16 {
+        return switch (this) {
+            .foreground => DefaultStyle.foreground,
+            .background => DefaultStyle.background,
+            .frame => DefaultStyle.frame,
+        };
+    }
+};
+
+fn style_interactive(el: Element, _: PaintStyle) PaintStyle {
+    if (el.clicked > 0) return .foreground;
+    if (el.hover) return .frame;
+    return .background;
+}
+
+fn style_inverse(_: Element, parent_style: PaintStyle) PaintStyle {
+    return switch (parent_style) {
+        .background => .foreground,
+        .foreground => .background,
+        .frame => .foreground,
+    };
+}
+
 pub const StyleSheet = struct {
-    const ButtonStyle = struct { label: u16, panel: u16 };
     background: u16,
-    button: struct {
-        default: ButtonStyle,
-        hover: ButtonStyle,
-        click: ButtonStyle,
-    },
+    foreground: u16,
+    frame: u16,
 };
 
 pub const DefaultStyle = StyleSheet{
-    .background = draw.color.select(.Light, .Dark),
-    .button = .{
-        .default = .{
-            .panel = draw.color.fill(.Light),
-            .label = draw.color.fill(.Dark),
-        },
-        .hover = .{
-            .panel = draw.color.select(.Light, .Dark),
-            .label = draw.color.fill(.Dark),
-        },
-        .click = .{
-            .panel = draw.color.fill(.Dark),
-            .label = draw.color.fill(.Light),
-        },
-    },
+    .background = draw.color.fill(.Light),
+    .foreground = draw.color.fill(.Dark),
+    .frame = draw.color.select(.Light, .Dark),
 };
 
 pub const Listener = struct {
@@ -268,8 +269,10 @@ pub const Stage = struct {
     style: StyleSheet = DefaultStyle,
     event_listeners: EventList,
     root: *Element,
+    // element_list: ElementList,
 
     const EventList = std.ArrayList(Listener);
+    // const ElementList = std.ArrayList(Element);
 
     pub fn init(alloc: std.mem.Allocator) !*@This() {
         const this = try alloc.create(@This());
@@ -277,12 +280,14 @@ pub const Stage = struct {
             .alloc = alloc,
             .event_listeners = EventList.init(alloc),
             .root = undefined,
+            // .element_list = ElementList.init(alloc),
         };
         this.root = try this.float(geom.AABB.init(0, 0, 160, 160));
         return this;
     }
 
     pub fn deinit(this: *@This()) !*@This() {
+        this.event_listeners.deinit();
         this.alloc.destroy(this);
     }
 
@@ -299,7 +304,16 @@ pub const Stage = struct {
         while (i > 0) : (i -= 1) {
             const listener = this.event_listeners.items[i];
             if (listener.el != el or listener.event != event or listener.callback != callback) continue;
-            this.event_listeners.swapRemove(i);
+            _ = this.event_listeners.swapRemove(i);
+        }
+    }
+
+    pub fn unlisten_all(this: *@This(), el: *Element) void {
+        var i: usize = this.event_listeners.items.len;
+        while (i > 0) : (i -= 1) {
+            const listener = this.event_listeners.items[i];
+            if (listener.el != el) continue;
+            _ = this.event_listeners.swapRemove(i);
         }
     }
 
@@ -329,7 +343,7 @@ pub const Stage = struct {
     }
 
     pub fn render(this: @This()) void {
-        this.root.render();
+        this.root.render(.background);
     }
 
     pub fn layout(this: *@This()) void {
@@ -367,6 +381,7 @@ pub const Stage = struct {
             .element = Element.init(this, el, size_fill, layout_relative, Panel.renderFn),
             .style = style,
         };
+        el.element.style = .{ .static = .frame };
         return &el.element;
     }
 
@@ -377,6 +392,7 @@ pub const Stage = struct {
             .style = style,
             .string = txt,
         };
+        el.element.style = .{ .static = .foreground };
         return &el.element;
     }
 
@@ -387,14 +403,17 @@ pub const Stage = struct {
             .blit = blit,
         };
         el.element.size.size = el.blit.get_size();
+        el.element.style = .{ .static = .foreground };
         return &el.element;
     }
 
     pub fn button(this: *@This(), string: []const u8) !*Element {
         const new_btn = try this.alloc.create(Button);
-        const new_panel = try this.panel(this.style.button.default.panel);
+        const new_panel = try this.panel(this.style.background);
+        new_panel.style = .{ .rule = style_interactive };
         const centerel = try this.center();
-        const new_label = try this.label(this.style.button.default.label, string);
+        const new_label = try this.label(this.style.foreground, string);
+        new_label.style = .{ .rule = style_inverse };
         centerel.appendChild(new_label);
         new_panel.appendChild(centerel);
         new_btn.* = Button{
@@ -403,11 +422,11 @@ pub const Stage = struct {
             .panel = @ptrCast(*Panel, @alignCast(@alignOf(Panel), new_panel.self)),
         };
         new_btn.element.appendChild(new_panel);
-        this.listen(&new_btn.element, .MouseClicked, Button.eventFn);
-        this.listen(&new_btn.element, .MousePressed, Button.eventFn);
-        this.listen(&new_btn.element, .MouseReleased, Button.eventFn);
-        this.listen(&new_btn.element, .MouseEnter, Button.eventFn);
-        this.listen(&new_btn.element, .MouseLeave, Button.eventFn);
+        // this.listen(&new_btn.element, .MouseClicked, Button.eventFn);
+        // this.listen(&new_btn.element, .MousePressed, Button.eventFn);
+        // this.listen(&new_btn.element, .MouseReleased, Button.eventFn);
+        // this.listen(&new_btn.element, .MouseEnter, Button.eventFn);
+        // this.listen(&new_btn.element, .MouseLeave, Button.eventFn);
         return &new_btn.element;
     }
 };
@@ -416,11 +435,17 @@ pub const Panel = struct {
     element: Element,
     style: u16,
 
-    fn renderFn(el: Element) void {
+    fn renderFn(el: Element, ctx: PaintStyle) PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         const rect = this.element.size;
-        w4.DRAW_COLORS.* = this.style;
+        var style = switch (el.style) {
+            .static => |style| style,
+            .rule => |stylerule| stylerule(el, ctx),
+        };
+        w4.DRAW_COLORS.* = style.to_style();
+        // w4.DRAW_COLORS.* = this.style;
         w4.rect(rect.pos[v.x], rect.pos[v.y], @intCast(u32, rect.size[v.x]), @intCast(u32, rect.size[v.y]));
+        return style;
     }
 };
 
@@ -433,9 +458,10 @@ pub const Sprite = struct {
         return geom.AABB.initv(bounds.pos, this.blit.get_size());
     }
 
-    fn renderFn(el: Element) void {
+    fn renderFn(el: Element, _: PaintStyle) PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.blit.blit(this.element.size.pos);
+        return .foreground;
     }
 };
 
@@ -449,10 +475,16 @@ pub const Label = struct {
         return geom.AABB.initv(bounds.pos, text.text_size(this.string));
     }
 
-    fn renderFn(el: Element) void {
+    fn renderFn(el: Element, ctx: PaintStyle) PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        w4.DRAW_COLORS.* = this.style;
+        var style = switch (el.style) {
+            .static => |style| style,
+            .rule => |stylerule| stylerule(el, ctx),
+        };
+        w4.DRAW_COLORS.* = style.to_style();
+        // w4.DRAW_COLORS.* = this.style;
         draw.text(this.string, this.element.size.pos);
+        return style;
     }
 };
 
@@ -465,18 +497,18 @@ pub const Button = struct {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         switch (event) {
             .MousePressed => |_| {
-                this.label.style = this.element.ctx.style.button.click.label;
-                this.panel.style = this.element.ctx.style.button.click.panel;
+                this.label.style = el.ctx.style.button.click.label;
+                this.panel.style = el.ctx.style.button.click.panel;
             },
             .MouseEnter,
             .MouseReleased,
             => {
-                this.label.style = this.element.ctx.style.button.hover.label;
-                this.panel.style = this.element.ctx.style.button.hover.panel;
+                this.label.style = el.ctx.style.button.hover.label;
+                this.panel.style = el.ctx.style.button.hover.panel;
             },
             .MouseLeave => {
-                this.label.style = this.element.ctx.style.button.default.label;
-                this.panel.style = this.element.ctx.style.button.default.panel;
+                this.label.style = el.ctx.style.button.default.label;
+                this.panel.style = el.ctx.style.button.default.panel;
             },
             else => {},
         }
