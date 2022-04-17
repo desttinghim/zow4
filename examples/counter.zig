@@ -52,6 +52,7 @@ export fn start() void {
     {
         var btn1 = stage.button("-") catch @panic("creating button");
         btn1.listen(.MouseClicked, decrement);
+        btn1.layoutFn = ui.layout.layout_padded;
         hdiv.appendChild(btn1);
     }
 
@@ -67,6 +68,7 @@ export fn start() void {
     {
         var btn2 = stage.button("+") catch @panic("creating button");
         btn2.listen(.MouseClicked, increment);
+        btn2.layoutFn = ui.layout.layout_padded;
         hdiv.appendChild(btn2);
     }
 }

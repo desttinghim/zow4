@@ -44,6 +44,8 @@ pub const Stage = struct {
     event_listeners: EventList,
     root: *Element,
     // element_list: ElementList,
+    focus: ?*Element = null,
+    last_focus: ?*Element = null,
 
     const EventList = std.ArrayList(Listener);
     // const ElementList = std.ArrayList(Element);
@@ -105,6 +107,8 @@ pub const Stage = struct {
 
         const mousepos = Input.mousepos();
         if (this.root.find_top(mousepos)) |focus| {
+            this.last_focus = this.focus;
+            this.focus = focus;
             if (Input.mousep(.left)) {
                 focus.bubble_up(.{ .MousePressed = mousepos });
             }
@@ -114,8 +118,12 @@ pub const Stage = struct {
             if (!geom.Vec.isZero(Input.mousediff())) {
                 focus.bubble_up(.{ .MouseMoved = mousepos });
             }
-            if (Input.clickstate == .clicked) {
-                focus.bubble_up(.{ .MouseClicked = mousepos });
+            if (this.focus != this.last_focus) {
+                focus.bubble_up(.MouseEnter);
+                if (this.last_focus) |last_focus| {
+                    last_focus.bubble_up(.MouseLeave);
+                    // this.last_focus = null;
+                }
             }
         }
     }
@@ -186,16 +194,17 @@ pub const Stage = struct {
     pub fn button(this: *@This(), string: []const u8) !*Element {
         const new_btn = try this.alloc.create(Element);
         new_btn.* = Element.init(this, new_btn, layout.size_fill, layout.layout_relative, null);
-
-        const new_panel = try this.panel();
-        new_panel.style = .{ .rule = style.style_interactive };
-        new_btn.appendChild(new_panel);
+        new_btn.renderFn = Panel.renderBtn;
+        new_btn.style = .{ .rule = style.style_interactive };
 
         const centerel = try this.center();
-        new_panel.appendChild(centerel);
+        centerel.capture_mouse = false;
 
         const new_label = try this.label(string);
         new_label.style = .{ .rule = style.style_inverse };
+        new_label.capture_mouse = false;
+
+        new_btn.appendChild(centerel);
         centerel.appendChild(new_label);
 
         return new_btn;
@@ -210,8 +219,44 @@ pub const Panel = struct {
             .rule => |stylerule| stylerule(el, ctx),
         };
         w4.DRAW_COLORS.* = draw_style.to_style();
-        // w4.DRAW_COLORS.* = this.style;
         w4.rect(rect.pos[v.x], rect.pos[v.y], @intCast(u32, rect.size[v.x]), @intCast(u32, rect.size[v.y]));
+        return draw_style;
+    }
+
+    fn renderBtn(el: Element, _: style.PaintStyle) style.PaintStyle {
+        const rect = el.size;
+        var draw_style: style.PaintStyle = .frame;
+
+        var sizex = @intCast(u32, rect.size[v.x]);
+        var sizey = @intCast(u32, rect.size[v.y]);
+
+        switch (el.mouse_state) {
+            .Open, .Hover => {
+                w4.DRAW_COLORS.* = style.PaintStyle.foreground.to_style();
+                // Render "Shadow"
+                w4.hline(rect.left() + 2, rect.bottom() - 1, sizex - 2);
+                w4.vline(rect.right() - 1, rect.top() + 2, sizey - 2);
+                // Render "Side"
+                w4.hline(rect.left() + 1, rect.bottom() - 2, sizex - 2);
+                w4.vline(rect.right() - 2, rect.top() + 1, sizey - 2);
+                if (el.mouse_state == .Hover) {
+                    draw_style = .frame;
+                    w4.DRAW_COLORS.* = draw_style.to_style();
+                    w4.rect(rect.left() + 1, rect.top() + 1, sizex - 2, sizey - 2);
+                }
+            },
+            .Pressed => {
+                draw_style = .foreground;
+                w4.DRAW_COLORS.* = draw_style.to_style();
+                w4.rect(rect.left() + 2, rect.top() + 2, sizex - 2, sizey - 2);
+            },
+            .Clicked => {
+                draw_style = .foreground;
+                w4.DRAW_COLORS.* = draw_style.to_style();
+                w4.rect(rect.left() + 2, rect.top() + 2, sizex - 2, sizey - 2);
+            },
+        }
+
         return draw_style;
     }
 };

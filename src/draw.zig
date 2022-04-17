@@ -16,7 +16,7 @@ pub fn pixel(x: i32, y: i32) void {
     if (palette_color == 0) { // Transparent
         return;
     }
-    const col= (palette_color - 1) & 0b11;
+    const col = (palette_color - 1) & 0b11;
     // Write to the framebuffer
     w4.FRAMEBUFFER[idx] = (col << shift) | (w4.FRAMEBUFFER[idx] & ~mask);
 }
@@ -86,7 +86,7 @@ pub const color = struct {
 pub const Blit = struct {
     bmp: *const Bitmap,
     rect: union(enum) { full, aabb: geom.AABB } = .full,
-    flags: BlitFlags = .{.bpp = .b1},
+    flags: BlitFlags = .{ .bpp = .b1 },
     style: u16,
 
     pub fn init(style: u16, bitmap: *const Bitmap, flags: BlitFlags) @This() {

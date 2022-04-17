@@ -39,8 +39,8 @@ pub fn update() void {
     gamepadstates[2] = w4.GAMEPAD3.*;
     gamepadstates[3] = w4.GAMEPAD4.*;
     mousestate = w4.MOUSE_BUTTONS.*;
-    mousepos_previous = mousepos();
-
+    mousepos_previous = mousepos_current;
+    mousepos_current = geom.Vec2{ w4.MOUSE_X.*, w4.MOUSE_Y.* };
     clickstate = updateclick(clickstate);
 }
 
@@ -52,9 +52,11 @@ fn updateclick(state: ClickState) ClickState {
         .started => |startpos| {
             if (!mouse(.left)) return .clicked;
             if (geom.dist(startpos, mousepos()) > 3) return .dragging;
+            return .{.started = startpos};
         },
         .dragging => {
             if (!mouse(.left)) return .open;
+            return .dragging;
         },
         .clicked => return .open,
     }
@@ -114,6 +116,7 @@ pub fn btnr(gp: Gamepad, button: GamepadButton) bool {
 // │                                                                           │
 // └───────────────────────────────────────────────────────────────────────────┘
 var mousestate: u8 = 0;
+var mousepos_current: geom.Vec2 = geom.Vec2{ 0, 0 };
 var mousepos_previous: geom.Vec2 = geom.Vec2{ 0, 0 };
 
 const ClickState = union(enum) { open, started: geom.Vec2, dragging, clicked };
@@ -147,7 +150,7 @@ pub fn mouser(button: MouseButton) bool {
 
 /// Returns a vector with the mouse position
 pub fn mousepos() geom.Vec2 {
-    return geom.Vec2{ w4.MOUSE_X.*, w4.MOUSE_Y.* };
+    return mousepos_current;
 }
 
 /// Returns a vector with a diff of the mouse position

@@ -10,10 +10,17 @@ const Event = ui.Event;
 const EventData = ui.EventData;
 const ListenFn = ui.ListenFn;
 
+const MouseState = union(enum) {
+    Open,
+    Hover,
+    Pressed,
+    Clicked: u8,
+};
+
 pub const Element = struct {
     hidden: bool = false,
-    hover: bool = false,
-    clicked: u8 = 0,
+    capture_mouse: bool = true,
+    mouse_state: MouseState = .Open,
     style: union(enum) { static: PaintStyle, rule: fn (Element, PaintStyle) PaintStyle } = .{ .static = .background },
     children: u8 = 0,
     self: *anyopaque,
@@ -56,15 +63,47 @@ pub const Element = struct {
     }
 
     pub fn update(this: *@This()) void {
-        if (!this.size.contains(Input.mousepos())) {
-            if (this.hover) {
-                this.ctx.dispatch(this, .MouseLeave);
-                this.hover = false;
-            }
+        switch (this.mouse_state) {
+            .Clicked => |click| if (click == 0) {
+                this.mouse_state = if (this.size.contains(Input.mousepos())) .Hover else .Open;
+            } else {
+                this.mouse_state = .{ .Clicked = click -| 1 };
+            },
+            else => {},
         }
-        this.clicked -|= 1;
         if (this.child) |child| child.update();
         if (this.next) |next| next.update();
+    }
+
+    pub fn dispatch(this: *@This(), ev: EventData) void {
+        switch (this.mouse_state) {
+            .Open => switch (ev) {
+                .MouseEnter => this.mouse_state = .Hover,
+                .MousePressed => this.mouse_state = .Pressed,
+                else => {},
+            },
+            .Hover => switch (ev) {
+                .MousePressed => this.mouse_state = .Pressed,
+                .MouseLeave => this.mouse_state = .Open,
+                else => {},
+            },
+            .Pressed => switch (ev) {
+                .MouseReleased => {
+                    this.dispatch(.{ .MouseClicked = Input.mousepos() });
+                    this.mouse_state = .{ .Clicked = 15 };
+                },
+                .MouseLeave => this.mouse_state = .Open,
+                else => {},
+            },
+            .Clicked => switch (ev) {
+                .MouseReleased => {
+                    this.dispatch(.{ .MouseClicked = Input.mousepos() });
+                    this.mouse_state.Clicked = 15;
+                },
+                else => {},
+            },
+        }
+        this.ctx.dispatch(this, ev);
     }
 
     pub fn find_top(this: *@This(), pos: geom.Vec2) ?*@This() {
@@ -73,21 +112,14 @@ pub const Element = struct {
         var child_opt = this.child;
         while (child_opt) |child| : (child_opt = child.next) {
             if (child.hidden) continue;
-            if (child.size.contains(pos))
+            if (child.size.contains(pos) and child.capture_mouse)
                 candidate = child.find_top(pos);
         }
         return candidate;
     }
 
     pub fn bubble_up(this: *@This(), ev: EventData) void {
-        switch (ev) {
-            .MouseMoved => if (!this.hover) {
-                this.hover = true;
-                this.ctx.dispatch(this, .MouseEnter);
-            },
-            else => {},
-        }
-        this.ctx.dispatch(this, ev);
+        this.dispatch(ev);
 
         if (this.parent) |parent| {
             parent.bubble_up(ev);

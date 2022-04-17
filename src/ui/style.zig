@@ -28,8 +28,8 @@ pub const PaintStyle = enum {
 };
 
 pub fn style_interactive(el: Element, _: PaintStyle) PaintStyle {
-    if (el.clicked > 0) return .foreground;
-    if (el.hover) return .frame;
+    if (el.mouse_state == .Clicked) return .foreground;
+    if (el.mouse_state == .Hover) return .frame;
     return .background;
 }
 

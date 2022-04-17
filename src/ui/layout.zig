@@ -19,6 +19,12 @@ pub fn layout_relative(el: *Element, _: usize) geom.AABB {
     return el.size;
 }
 
+/// Pads layout
+pub fn layout_padded(el: *Element, _: usize) geom.AABB {
+    const padded = geom.AABB.initv(el.size.pos + geom.Vec2{2, 2}, el.size.size - geom.Vec2{2, 2});
+    return padded;
+}
+
 /// Stack elements downwards
 pub fn layout_vlist(el: *Element, childID: usize) geom.AABB {
     if (childID == 0) {

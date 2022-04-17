@@ -34,6 +34,15 @@ fn float_pressed(el: *ui.Element, event: ui.EventData) void {
     el.move_to_front();
 }
 
+fn float_drag(el: *ui.Element, _: ui.EventData) void {
+    if (grabbed) |grab| {
+        if (grab == el) {
+            // Reset the mouse_state
+            grab.mouse_state = .Hover;
+        }
+    }
+}
+
 fn float_delete(el: *ui.Element, _: ui.EventData) void {
     el.remove();
 }
@@ -60,6 +69,7 @@ export fn start() void {
     float.listen(.MousePressed, float_pressed);
     float.listen(.MouseReleased, float_release);
     float.listen(.MouseClicked, float_hide);
+    float.listen(.MouseMoved, float_drag);
     stage.root.appendChild(float);
 
     var menubar = stage.float(geom.AABB.init(0, 0, 160, 16)) catch @panic("creating menubar");
@@ -117,6 +127,7 @@ export fn start() void {
     var float2 = stage.float(geom.AABB.init(20, 120, 120, 120)) catch @panic("creating anchorEl");
     float2.listen(.MousePressed, float_pressed);
     float2.listen(.MouseReleased, float_release);
+    float2.listen(.MouseMoved, float_drag);
     stage.root.appendChild(float2);
 
     var panel2 = stage.panel() catch @panic("creating element");
