@@ -79,7 +79,7 @@ export fn start() void {
     btn3.listen(.MouseClicked, float_toggle);
     hlist.appendChild(btn3);
 
-    var panel = stage.panel(color.select(.Light, .Dark)) catch @panic("creating element");
+    var panel = stage.panel() catch @panic("creating element");
     float.appendChild(panel);
 
     var vlist = stage.vdiv() catch @panic("creating vlist");
@@ -87,7 +87,7 @@ export fn start() void {
 
     {
         var center = stage.center() catch @panic("center");
-        var label = stage.label(color.fill(.Dark), "Click To Hide") catch @panic("creating label");
+        var label = stage.label("Click To Hide") catch @panic("creating label");
         center.appendChild(label);
         vlist.appendChild(center);
     }
@@ -95,7 +95,7 @@ export fn start() void {
     {
         const elsize = std.fmt.allocPrint(alloc, "{}", .{@sizeOf(ui.Element)}) catch @panic("alloc");
         var center = stage.center() catch @panic("center");
-        var label = stage.label(color.fill(.Dark), elsize) catch @panic("creating label");
+        var label = stage.label(elsize) catch @panic("creating label");
         center.appendChild(label);
         vlist.appendChild(center);
     }
@@ -108,17 +108,14 @@ export fn start() void {
     }
     {
         var center = stage.center() catch @panic("center");
-        var label = stage.label(color.fill(.Dark), "Drag To Move") catch @panic("creating label");
+        var label = stage.label("Drag To Move") catch @panic("creating label");
         center.appendChild(label);
         vlist.appendChild(center);
     }
-
-    stage.layout();
 }
 
 export fn update() void {
     stage.update();
-    stage.layout();
     stage.render();
 
     if (grabbed) |el| {

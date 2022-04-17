@@ -6,6 +6,10 @@ const text = @import("text.zig");
 const Input = @import("input.zig");
 const v = geom.Vec;
 
+pub const layout = @import("ui/layout.zig");
+pub const Element = @import("ui/element.zig").Element;
+pub const style = @import("ui/style.zig");
+
 const Blit = draw.Blit;
 const BlitFlags = draw.BlitFlags;
 
@@ -26,236 +30,6 @@ pub const EventData = union(Event) {
     MouseEnter,
     MouseLeave,
 };
-
-/// Fill entire available space
-fn size_fill(_: *Element, bounds: geom.AABB) geom.AABB {
-    return bounds;
-}
-
-/// Size is preset
-fn size_static(el: *Element, _: geom.AABB) geom.AABB {
-    return el.size;
-}
-
-/// No layout
-fn layout_relative(el: *Element, _: usize) geom.AABB {
-    return el.size;
-}
-
-/// Divide vertical space equally
-fn layout_div_vertical(el: *Element, childID: usize) geom.AABB {
-    const vsize = @divTrunc(el.size.size[v.y], @intCast(i32, el.children));
-    return geom.AABB.initv(
-        el.size.pos + geom.Vec2{ 0, @intCast(i32, childID) * vsize },
-        geom.Vec2{ el.size.size[v.x], vsize },
-    );
-}
-
-/// Divide horizontal space equally
-fn layout_div_horizontal(el: *Element, childID: usize) geom.AABB {
-    const hsize = @divTrunc(el.size.size[v.x], @intCast(i32, el.children));
-    return geom.AABB.initv(
-        el.size.pos + geom.Vec2{ @intCast(i32, childID) * hsize, 0 },
-        geom.Vec2{ hsize, el.size.size[v.y] },
-    );
-}
-
-/// Center component
-fn layout_center(el: *Element, childID: usize) geom.AABB {
-    const centerv = el.size.pos + @divTrunc(el.size.size, geom.Vec2{ 2, 2 });
-    var centeraabb = geom.AABB.initv(centerv, geom.Vec2{ 0, 0 });
-    if (el.getChild(childID)) |child| {
-        centeraabb.pos -= @divTrunc(child.size.size, geom.Vec2{ 2, 2 });
-        centeraabb.size = child.size.size;
-    }
-    return centeraabb;
-}
-
-pub const Element = struct {
-    hidden: bool = false,
-    hover: bool = false,
-    clicked: u8 = 0,
-    style: union(enum) { static: PaintStyle, rule: fn (Element, PaintStyle) PaintStyle } = .{ .static = .background },
-    children: u8 = 0,
-    self: *anyopaque,
-    /// Space that the element takes up
-    ctx: *Stage,
-    prev: ?*@This() = null,
-    next: ?*@This() = null,
-    parent: ?*@This() = null,
-    child: ?*@This() = null,
-    // Function Pointers
-    sizeFn: SizeFn,
-    layoutFn: LayoutFn,
-    renderFn: ?RenderFn,
-    size: geom.AABB,
-
-    /// Passed self, bounding box, and returns a size
-    const SizeFn = fn (*Element, geom.AABB) geom.AABB;
-    /// Passed self number of children, and child number, returns bounds to be passed to size
-    const LayoutFn = fn (*Element, usize) geom.AABB;
-    /// Draws element to the screen
-    const RenderFn = fn (Element, PaintStyle) PaintStyle;
-
-    pub fn init(ctx: *Stage, self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn) @This() {
-        return @This(){
-            .ctx = ctx,
-            .self = self,
-            .size = geom.AABB.init(0, 0, 160, 160),
-            .sizeFn = sizeFn,
-            .layoutFn = layoutFn,
-            .renderFn = renderFn,
-        };
-    }
-
-    pub fn listen(this: *@This(), event: Event, callback: ListenFn) void {
-        this.ctx.listen(this, event, callback);
-    }
-
-    pub fn unlisten(this: *@This(), event: Event, callback: ListenFn) void {
-        this.ctx.unlisten(this, event, callback);
-    }
-
-    fn update(this: *@This()) void {
-        if (this.size.contains(Input.mousepos())) {
-            if (!this.hover) {
-                this.hover = true;
-                this.ctx.dispatch(this, .MouseEnter);
-            }
-        } else {
-            this.ctx.dispatch(this, .MouseLeave);
-            this.hover = false;
-        }
-        if (this.clicked > 0) this.clicked -= 1;
-        if (this.child) |child| child.update();
-        if (this.next) |next| next.update();
-    }
-
-    fn bubble(this: *@This(), ev: EventData) void {
-        var child_opt = this.child;
-        var i: usize = 0;
-        while (child_opt) |child| : (child_opt = child.next) {
-            if (child.hidden) {
-                i += 1;
-                continue;
-            }
-            switch (ev) {
-                .MouseClicked => |pos| {
-                    this.clicked = 15;
-                    if (child.size.contains(pos)) child.bubble(ev);
-                },
-                .MouseMoved,
-                .MousePressed,
-                .MouseReleased,
-                => |pos| {
-                    if (child.size.contains(pos)) child.bubble(ev);
-                },
-                else => child.bubble(ev),
-            }
-            i += 1;
-        }
-        this.ctx.dispatch(this, ev);
-    }
-
-    pub fn remove(this: *@This()) void {
-        // TODO
-        if (this.child) |child| child.remove();
-        if (this.prev) |prev| prev.next = this.next;
-        if (this.parent) |parent| parent.children -= 1;
-        this.ctx.unlisten_all(this);
-        this.ctx.alloc.destroy(this.self);
-    }
-
-    pub fn compute_size(this: *@This(), bounds: geom.AABB) void {
-        this.size = this.sizeFn(this, bounds);
-    }
-
-    pub fn layout(this: *@This()) void {
-        var child_opt = this.child;
-        var i: usize = 0;
-        while (child_opt) |child| : (i += 1) {
-            const bounds = this.layoutFn(this, i);
-            child.compute_size(bounds);
-            child.layout();
-            child_opt = child.next;
-        }
-    }
-
-    pub fn getChild(this: *@This(), num: usize) ?*@This() {
-        var i: usize = 0;
-        var child_opt = this.child;
-        while (child_opt) |child| : (i += 1) {
-            if (i == num) return child;
-        }
-        return null;
-    }
-
-    pub fn appendChild(this: *@This(), el: *@This()) void {
-        el.parent = this;
-        this.children += 1;
-
-        var child_opt = this.child;
-        while (child_opt) |child| {
-            if (child.next) |next| {
-                child_opt = next;
-            } else {
-                child.next = el;
-                break; // prevent else block
-            }
-        } else {
-            this.child = el;
-        }
-    }
-
-    pub fn render(this: @This(), parent_style: PaintStyle) void {
-        if (!this.hidden) {
-            const style = if (this.renderFn) |rfn| rfn(this, parent_style) else parent_style;
-            if (this.child) |child| child.render(style);
-        }
-        if (this.next) |next| next.render(parent_style);
-    }
-};
-
-pub const PaintStyle = union(enum) {
-    background,
-    foreground,
-    frame,
-
-    fn to_style(this: @This()) u16 {
-        return switch (this) {
-            .foreground => DefaultStyle.foreground,
-            .background => DefaultStyle.background,
-            .frame => DefaultStyle.frame,
-        };
-    }
-};
-
-fn style_interactive(el: Element, _: PaintStyle) PaintStyle {
-    if (el.clicked > 0) return .foreground;
-    if (el.hover) return .frame;
-    return .background;
-}
-
-fn style_inverse(_: Element, parent_style: PaintStyle) PaintStyle {
-    return switch (parent_style) {
-        .background => .foreground,
-        .foreground => .background,
-        .frame => .foreground,
-    };
-}
-
-pub const StyleSheet = struct {
-    background: u16,
-    foreground: u16,
-    frame: u16,
-};
-
-pub const DefaultStyle = StyleSheet{
-    .background = draw.color.fill(.Light),
-    .foreground = draw.color.fill(.Dark),
-    .frame = draw.color.select(.Light, .Dark),
-};
-
 pub const Listener = struct {
     el: *Element,
     event: Event,
@@ -266,7 +40,7 @@ pub const ListenFn = fn (*Element, EventData) void;
 
 pub const Stage = struct {
     alloc: std.mem.Allocator,
-    style: StyleSheet = DefaultStyle,
+    style: style.StyleSheet = style.DefaultStyle,
     event_listeners: EventList,
     root: *Element,
     // element_list: ElementList,
@@ -325,6 +99,7 @@ pub const Stage = struct {
     }
 
     pub fn update(this: *@This()) void {
+        this.root.layout();
         this.root.update();
 
         const mousepos = Input.mousepos();
@@ -346,50 +121,42 @@ pub const Stage = struct {
         this.root.render(.background);
     }
 
-    pub fn layout(this: *@This()) void {
-        this.root.layout();
-    }
-
     pub fn hdiv(this: *@This()) !*Element {
         var el = try this.alloc.create(Element);
-        el.* = Element.init(this, el, size_fill, layout_div_horizontal, null);
+        el.* = Element.init(this, el, layout.size_fill, layout.layout_div_horizontal, null);
         return el;
     }
 
     pub fn vdiv(this: *@This()) !*Element {
         var el = try this.alloc.create(Element);
-        el.* = Element.init(this, el, size_fill, layout_div_vertical, null);
+        el.* = Element.init(this, el, layout.size_fill, layout.layout_div_vertical, null);
         return el;
     }
 
     pub fn center(this: *@This()) !*Element {
         var el = try this.alloc.create(Element);
-        el.* = Element.init(this, el, size_fill, layout_center, null);
+        el.* = Element.init(this, el, layout.size_fill, layout.layout_center, null);
         return el;
     }
 
     pub fn float(this: *@This(), rect: geom.AABB) !*Element {
         var el = try this.alloc.create(Element);
-        el.* = Element.init(this, el, size_static, layout_relative, null);
+        el.* = Element.init(this, el, layout.size_static, layout.layout_relative, null);
         el.size = rect;
         return el;
     }
 
-    pub fn panel(this: *@This(), style: u16) !*Element {
-        const el = try this.alloc.create(Panel);
-        el.* = Panel{
-            .element = Element.init(this, el, size_fill, layout_relative, Panel.renderFn),
-            .style = style,
-        };
-        el.element.style = .{ .static = .frame };
-        return &el.element;
+    pub fn panel(this: *@This()) !*Element {
+        const el = try this.alloc.create(Element);
+        el.* = Element.init(this, el, layout.size_fill, layout.layout_relative, Panel.renderFn);
+        el.style = .{ .static = .frame };
+        return el;
     }
 
-    pub fn label(this: *@This(), style: u16, txt: []const u8) !*Element {
+    pub fn label(this: *@This(), txt: []const u8) !*Element {
         const el = try this.alloc.create(Label);
         el.* = Label{
-            .element = Element.init(this, el, Label.sizeFn, layout_relative, Label.renderFn),
-            .style = style,
+            .element = Element.init(this, el, Label.sizeFn, layout.layout_relative, Label.renderFn),
             .string = txt,
         };
         el.element.style = .{ .static = .foreground };
@@ -399,7 +166,7 @@ pub const Stage = struct {
     pub fn sprite(this: *@This(), blit: Blit) !*Element {
         const el = try this.alloc.create(Sprite);
         el.* = Sprite{
-            .element = Element.init(this, el, Sprite.sizeFn, layout_relative, Sprite.renderFn),
+            .element = Element.init(this, el, Sprite.sizeFn, layout.layout_relative, Sprite.renderFn),
             .blit = blit,
         };
         el.element.size.size = el.blit.get_size();
@@ -408,44 +175,35 @@ pub const Stage = struct {
     }
 
     pub fn button(this: *@This(), string: []const u8) !*Element {
-        const new_btn = try this.alloc.create(Button);
-        const new_panel = try this.panel(this.style.background);
-        new_panel.style = .{ .rule = style_interactive };
+        const new_btn = try this.alloc.create(Element);
+        new_btn.* = Element.init(this, new_btn, layout.size_fill, layout.layout_relative, null);
+
+        const new_panel = try this.panel();
+        new_panel.style = .{ .rule = style.style_interactive };
+        new_btn.appendChild(new_panel);
+
         const centerel = try this.center();
-        const new_label = try this.label(this.style.foreground, string);
-        new_label.style = .{ .rule = style_inverse };
-        centerel.appendChild(new_label);
         new_panel.appendChild(centerel);
-        new_btn.* = Button{
-            .element = Element.init(this, new_btn, size_fill, layout_relative, null),
-            .label = @ptrCast(*Label, @alignCast(@alignOf(Label), new_label.self)),
-            .panel = @ptrCast(*Panel, @alignCast(@alignOf(Panel), new_panel.self)),
-        };
-        new_btn.element.appendChild(new_panel);
-        // this.listen(&new_btn.element, .MouseClicked, Button.eventFn);
-        // this.listen(&new_btn.element, .MousePressed, Button.eventFn);
-        // this.listen(&new_btn.element, .MouseReleased, Button.eventFn);
-        // this.listen(&new_btn.element, .MouseEnter, Button.eventFn);
-        // this.listen(&new_btn.element, .MouseLeave, Button.eventFn);
-        return &new_btn.element;
+
+        const new_label = try this.label(string);
+        new_label.style = .{ .rule = style.style_inverse };
+        centerel.appendChild(new_label);
+
+        return new_btn;
     }
 };
 
 pub const Panel = struct {
-    element: Element,
-    style: u16,
-
-    fn renderFn(el: Element, ctx: PaintStyle) PaintStyle {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        const rect = this.element.size;
-        var style = switch (el.style) {
-            .static => |style| style,
+    fn renderFn(el: Element, ctx: style.PaintStyle) style.PaintStyle {
+        const rect = el.size;
+        var draw_style = switch (el.style) {
+            .static => |staticstyle| staticstyle,
             .rule => |stylerule| stylerule(el, ctx),
         };
-        w4.DRAW_COLORS.* = style.to_style();
+        w4.DRAW_COLORS.* = draw_style.to_style();
         // w4.DRAW_COLORS.* = this.style;
         w4.rect(rect.pos[v.x], rect.pos[v.y], @intCast(u32, rect.size[v.x]), @intCast(u32, rect.size[v.y]));
-        return style;
+        return draw_style;
     }
 };
 
@@ -458,7 +216,7 @@ pub const Sprite = struct {
         return geom.AABB.initv(bounds.pos, this.blit.get_size());
     }
 
-    fn renderFn(el: Element, _: PaintStyle) PaintStyle {
+    fn renderFn(el: Element, _: style.PaintStyle) style.PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.blit.blit(this.element.size.pos);
         return .foreground;
@@ -467,7 +225,6 @@ pub const Sprite = struct {
 
 pub const Label = struct {
     element: Element,
-    style: u16,
     string: []const u8,
 
     fn sizeFn(el: *Element, bounds: geom.AABB) geom.AABB {
@@ -475,42 +232,15 @@ pub const Label = struct {
         return geom.AABB.initv(bounds.pos, text.text_size(this.string));
     }
 
-    fn renderFn(el: Element, ctx: PaintStyle) PaintStyle {
+    fn renderFn(el: Element, ctx: style.PaintStyle) style.PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        var style = switch (el.style) {
-            .static => |style| style,
+        var draw_style = switch (el.style) {
+            .static => |staticstyle| staticstyle,
             .rule => |stylerule| stylerule(el, ctx),
         };
-        w4.DRAW_COLORS.* = style.to_style();
+        w4.DRAW_COLORS.* = draw_style.to_style();
         // w4.DRAW_COLORS.* = this.style;
         draw.text(this.string, this.element.size.pos);
-        return style;
-    }
-};
-
-pub const Button = struct {
-    element: Element,
-    label: *Label,
-    panel: *Panel,
-
-    fn eventFn(el: *Element, event: EventData) void {
-        const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
-        switch (event) {
-            .MousePressed => |_| {
-                this.label.style = el.ctx.style.button.click.label;
-                this.panel.style = el.ctx.style.button.click.panel;
-            },
-            .MouseEnter,
-            .MouseReleased,
-            => {
-                this.label.style = el.ctx.style.button.hover.label;
-                this.panel.style = el.ctx.style.button.hover.panel;
-            },
-            .MouseLeave => {
-                this.label.style = el.ctx.style.button.default.label;
-                this.panel.style = el.ctx.style.button.default.panel;
-            },
-            else => {},
-        }
+        return draw_style;
     }
 };
