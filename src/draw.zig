@@ -4,6 +4,55 @@ const geom = @import("geometry.zig");
 const v = geom.Vec;
 const Text = @import("text.zig");
 
+// https://rosettacode.org/wiki/Bitmap/B%C3%A9zier_curves/Quadratic#C
+pub fn quadratic_bezier(p1: geom.Vec2f, p2: geom.Vec2f, p3: geom.Vec2f) void {
+    const QuadraticSegments = 16;
+    var pts: [QuadraticSegments + 1]geom.Vec2f = undefined;
+    var i: usize = 0;
+    while (i <= QuadraticSegments) : (i += 1) {
+        const t = @intToFloat(f32, i) / QuadraticSegments;
+
+        const pow = std.math.pow;
+        const a = @splat(2, pow(f32, 1.0 - t, 2.0));
+        const b = @splat(2, 2.0 * t * (1.0 - t));
+        const c = @splat(2, pow(f32, t, 2.0));
+
+        pts[i] = a * p1 + b * p2 + c * p3;
+    }
+    i = 0;
+    while (i < QuadraticSegments) : (i += 1) {
+        const j = i + 1;
+        const ipt = geom.vec2fToVec2(pts[i]);
+        const jpt = geom.vec2fToVec2(pts[j]);
+        w4.line(ipt[0], ipt[1], jpt[0], jpt[1]);
+    }
+}
+
+// https://rosettacode.org/wiki/Bitmap/B%C3%A9zier_curves/Cubic#C
+pub fn cubic_bezier(p1: geom.Vec2f, p2: geom.Vec2f, p3: geom.Vec2f, p4: geom.Vec2f) void {
+    const CubicSegments = 16;
+    var pts: [CubicSegments + 1]geom.Vec2f = undefined;
+    var i: usize = 0;
+    while (i <= CubicSegments) : (i += 1) {
+        const t: f32 = @intToFloat(f32, i) / CubicSegments;
+
+        const pow = std.math.pow;
+        const a = @splat(2, pow(f32, 1 - t, 3.0));
+        const b = @splat(2, 3.0 * t * pow(f32, 1 - t, 2));
+        const c = @splat(2, 3 * pow(f32, t, 2.0) * (1.0 - t));
+        const d = @splat(2, pow(f32, t, 3.0));
+
+        pts[i] = a * p1 + b * p2 + c * p3 + d * p4;
+    }
+    i = 0;
+    while (i < CubicSegments) : (i += 1) {
+        const j = i + 1;
+        const ipt = geom.vec2fToVec2(pts[i]);
+        const jpt = geom.vec2fToVec2(pts[j]);
+        w4.line(ipt[0], ipt[1], jpt[0], jpt[1]);
+    }
+}
+
 pub fn pixel(x: i32, y: i32) void {
     if (x < 0 or x >= 160 or y < 0 or y >= 160) return;
     // The byte index into the framebuffer that contains (x, y)
@@ -50,7 +99,6 @@ pub fn text_mini(string: []const u8, pos: geom.Vec2, lines: ?usize) void {
         }
     }
 }
-
 
 pub const Color = enum(u16) {
     Transparent = 0,

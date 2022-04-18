@@ -162,6 +162,9 @@ export fn update() void {
     stage.update();
     stage.render();
 
+    zow4.draw.cubic_bezier(.{0,0}, .{160,0}, .{0, 160}, .{160, 160});
+    zow4.draw.quadratic_bezier(.{0,0}, .{240,80}, .{0, 160});
+
     if (grabbed) |el| {
         if (grab_point) |point| {
             el.size.pos = Input.mousepos() - point;
