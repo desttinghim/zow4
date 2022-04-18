@@ -28,7 +28,7 @@ pub const Element = struct {
     hidden: bool = false,
     capture_mouse: bool = true,
     mouse_state: MouseState = .Open,
-    style: union(enum) { static: PaintStyle, rule: fn (Element, PaintStyle) PaintStyle } = .{ .static = .background },
+    style: union(enum) { static: PaintStyle, rule: fn (*const Element, PaintStyle) PaintStyle } = .{ .static = .background },
     children: usize = 0,
     self: *anyopaque,
     /// Space that the element takes up

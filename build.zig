@@ -64,13 +64,13 @@ pub fn build(b: *std.build.Builder) void {
 
     try tests(b, mode);
 
-    // const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
-    // example.addPackage(pkgs.zow4);
-    // try addWasm4RunStep(b, "run-example", example);
+    const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
+    example.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-example", example);
 
-    // const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
-    // counter.addPackage(pkgs.zow4);
-    // try addWasm4RunStep(b, "run-counter", counter);
+    const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
+    counter.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-counter", counter);
 
     const bezier = try addWasm4Cart(b, "bezier", "examples/bezier.zig");
     bezier.addPackage(pkgs.zow4);

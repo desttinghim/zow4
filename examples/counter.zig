@@ -11,18 +11,20 @@ var counter: isize = 0;
 var counter_label: *ui.Label = undefined;
 var counter_text: []u8 = undefined;
 
-fn increment(_: *ui.Element, _: ui.EventData) void {
+fn increment(_: *ui.Element, _: ui.EventData) bool {
     counter +|= 1;
     alloc.free(counter_text);
     counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
     counter_label.string = counter_text;
+    return false;
 }
 
-fn decrement(_: *ui.Element, _: ui.EventData) void {
+fn decrement(_: *ui.Element, _: ui.EventData) bool {
     counter -|= 1;
     alloc.free(counter_text);
     counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
     counter_label.string = counter_text;
+    return false;
 }
 
 export fn start() void {

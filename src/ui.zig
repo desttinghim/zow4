@@ -226,7 +226,7 @@ pub const Stage = struct {
 };
 
 pub const Panel = struct {
-    fn renderFn(el: Element, ctx: style.PaintStyle) style.PaintStyle {
+    fn renderFn(el: *const Element, ctx: style.PaintStyle) style.PaintStyle {
         const rect = el.size;
         var draw_style = switch (el.style) {
             .static => |staticstyle| staticstyle,
@@ -237,7 +237,7 @@ pub const Panel = struct {
         return draw_style;
     }
 
-    fn renderBtn(el: Element, _: style.PaintStyle) style.PaintStyle {
+    fn renderBtn(el: *const Element, _: style.PaintStyle) style.PaintStyle {
         const rect = el.size;
         var draw_style: style.PaintStyle = .frame;
 
@@ -286,7 +286,7 @@ pub const Sprite = struct {
         return geom.AABB.initv(bounds.pos, this.blit.get_size());
     }
 
-    fn renderFn(el: Element, _: style.PaintStyle) style.PaintStyle {
+    fn renderFn(el: *const Element, _: style.PaintStyle) style.PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         this.blit.blit(this.element.size.pos);
         return .foreground;
@@ -302,7 +302,7 @@ pub const Label = struct {
         return geom.AABB.initv(bounds.pos, text.text_size(this.string));
     }
 
-    fn renderFn(el: Element, ctx: style.PaintStyle) style.PaintStyle {
+    fn renderFn(el: *const Element, ctx: style.PaintStyle) style.PaintStyle {
         const this = @ptrCast(*@This(), @alignCast(@alignOf(@This()), el.self));
         var draw_style = switch (el.style) {
             .static => |staticstyle| staticstyle,

@@ -27,13 +27,13 @@ pub const PaintStyle = enum {
     }
 };
 
-pub fn style_interactive(el: Element, _: PaintStyle) PaintStyle {
+pub fn style_interactive(el: *const Element, _: PaintStyle) PaintStyle {
     if (el.mouse_state == .Clicked) return .foreground;
     if (el.mouse_state == .Hover) return .frame;
     return .background;
 }
 
-pub fn style_inverse(_: Element, parent_style: PaintStyle) PaintStyle {
+pub fn style_inverse(_: *const Element, parent_style: PaintStyle) PaintStyle {
     return switch (parent_style) {
         .background => .foreground,
         .foreground => .background,
