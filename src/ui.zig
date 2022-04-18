@@ -232,6 +232,8 @@ pub const Panel = struct {
 
         switch (el.mouse_state) {
             .Open, .Hover => {
+                w4.DRAW_COLORS.* = draw_style.to_style();
+                w4.rect(rect.left() + 1, rect.top() + 1, sizex - 2, sizey - 2);
                 w4.DRAW_COLORS.* = style.PaintStyle.foreground.to_style();
                 // Render "Shadow"
                 w4.hline(rect.left() + 2, rect.bottom() - 1, sizex - 2);
