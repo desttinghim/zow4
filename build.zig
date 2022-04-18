@@ -10,23 +10,6 @@ pub const pkgs = struct {
         .dependencies = null,
     };
 
-    pub const input = Pkg{
-        .name = "input",
-        .path = FileSource.relative("src/input.zig"),
-        .dependencies = &[_]Pkg{wasm4},
-    };
-
-    pub const heap = Pkg{
-        .name = "heap",
-        .path = FileSource.relative("src/heap.zig"),
-        .dependencies = &[_]Pkg{wasm4},
-    };
-
-    pub const scene = Pkg{
-        .name = "scene",
-        .path = FileSource.relative("src/scene.zig"),
-    };
-
     pub const zow4 = Pkg{
         .name = "zow4",
         .path = FileSource.relative("src/zow4.zig"),
@@ -56,7 +39,7 @@ pub fn addWasm4Cart(b: *std.build.Builder, name: []const u8, path: []const u8) !
     lib.stack_size = 14752;
 
     // Export WASM-4 symbols
-    lib.export_symbol_names = &[_][]const u8{ "start", "update" };
+    // lib.export_symbol_names = &[_][]const u8{ "start", "update" };
 
     lib.install();
 
@@ -81,13 +64,17 @@ pub fn build(b: *std.build.Builder) void {
 
     try tests(b, mode);
 
-    const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
-    example.addPackage(pkgs.zow4);
-    try addWasm4RunStep(b, "run-example", example);
+    // const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
+    // example.addPackage(pkgs.zow4);
+    // try addWasm4RunStep(b, "run-example", example);
 
-    const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
-    counter.addPackage(pkgs.zow4);
-    try addWasm4RunStep(b, "run-counter", counter);
+    // const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
+    // counter.addPackage(pkgs.zow4);
+    // try addWasm4RunStep(b, "run-counter", counter);
+
+    const bezier = try addWasm4Cart(b, "bezier", "examples/bezier.zig");
+    bezier.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-bezier", bezier);
 }
 
 fn tests(b: *std.build.Builder, mode: std.builtin.Mode) !void {

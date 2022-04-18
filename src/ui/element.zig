@@ -17,12 +17,19 @@ const MouseState = union(enum) {
     Clicked: u8,
 };
 
+/// Passed self, bounding box, and returns a size
+pub const SizeFn = fn (*Element, geom.AABB) geom.AABB;
+/// Passed self number of children, and child number, returns bounds to be passed to size
+pub const LayoutFn = fn (*Element, usize) geom.AABB;
+/// Draws element to the screen
+pub const RenderFn = fn (*const Element, PaintStyle) PaintStyle;
+
 pub const Element = struct {
     hidden: bool = false,
     capture_mouse: bool = true,
     mouse_state: MouseState = .Open,
     style: union(enum) { static: PaintStyle, rule: fn (Element, PaintStyle) PaintStyle } = .{ .static = .background },
-    children: u8 = 0,
+    children: usize = 0,
     self: *anyopaque,
     /// Space that the element takes up
     ctx: *ui.Stage,
@@ -35,13 +42,6 @@ pub const Element = struct {
     layoutFn: LayoutFn,
     renderFn: ?RenderFn,
     size: geom.AABB,
-
-    /// Passed self, bounding box, and returns a size
-    const SizeFn = fn (*Element, geom.AABB) geom.AABB;
-    /// Passed self number of children, and child number, returns bounds to be passed to size
-    const LayoutFn = fn (*Element, usize) geom.AABB;
-    /// Draws element to the screen
-    const RenderFn = fn (Element, PaintStyle) PaintStyle;
 
     pub fn init(ctx: *ui.Stage, self: *anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn) @This() {
         return @This(){
@@ -72,10 +72,15 @@ pub const Element = struct {
             else => {},
         }
         if (this.child) |child| child.update();
-        if (this.next) |next| next.update();
+        var next_opt = this.next;
+        while (next_opt) |next| {
+            next.update();
+            next_opt = next.next;
+        }
+        // if (this.next) |next| next.update();
     }
 
-    pub fn dispatch(this: *@This(), ev: EventData) void {
+    pub fn dispatch(this: *@This(), ev: EventData) bool {
         switch (this.mouse_state) {
             .Open => switch (ev) {
                 .MouseEnter => this.mouse_state = .Hover,
@@ -89,21 +94,23 @@ pub const Element = struct {
             },
             .Pressed => switch (ev) {
                 .MouseReleased => {
-                    this.dispatch(.{ .MouseClicked = Input.mousepos() });
+                    const stop = this.dispatch(.{ .MouseClicked = Input.mousepos() });
                     this.mouse_state = .{ .Clicked = 15 };
+                    return stop;
                 },
                 .MouseLeave => this.mouse_state = .Open,
                 else => {},
             },
             .Clicked => switch (ev) {
                 .MouseReleased => {
-                    this.dispatch(.{ .MouseClicked = Input.mousepos() });
+                    const stop = this.dispatch(.{ .MouseClicked = Input.mousepos() });
                     this.mouse_state.Clicked = 15;
+                    return stop;
                 },
                 else => {},
             },
         }
-        this.ctx.dispatch(this, ev);
+        return this.ctx.dispatch(this, ev);
     }
 
     pub fn find_top(this: *@This(), pos: geom.Vec2) ?*@This() {
@@ -119,7 +126,8 @@ pub const Element = struct {
     }
 
     pub fn bubble_up(this: *@This(), ev: EventData) void {
-        this.dispatch(ev);
+        const stop = this.dispatch(ev);
+        if (stop) return;
 
         if (this.parent) |parent| {
             parent.bubble_up(ev);
@@ -130,7 +138,7 @@ pub const Element = struct {
         this.detach();
         if (this.child) |child| child.remove();
         this.ctx.unlisten_all(this);
-        this.ctx.alloc.destroy(this.self);
+        // this.ctx.alloc.destroy(this.self);
     }
 
     pub fn detach(this: *@This()) void {
@@ -206,11 +214,16 @@ pub const Element = struct {
         }
     }
 
-    pub fn render(this: @This(), parent_style: PaintStyle) void {
+    pub fn render(this: *const @This(), parent_style: PaintStyle) void {
         if (!this.hidden) {
             const style = if (this.renderFn) |rfn| rfn(this, parent_style) else parent_style;
             if (this.child) |child| child.render(style);
         }
-        if (this.next) |next| next.render(parent_style);
+        var next_opt = this.next;
+        while(next_opt) |next| {
+            next.render(parent_style);
+            next_opt = next.next;
+        }
+        // if (this.next) |next| next.render(parent_style);
     }
 };

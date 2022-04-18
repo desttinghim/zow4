@@ -4,14 +4,19 @@ const geom = @import("geometry.zig");
 const draw = @import("draw.zig");
 const text = @import("text.zig");
 const Input = @import("input.zig");
+const elmnt = @import("ui/element.zig");
 const v = geom.Vec;
 
 pub const layout = @import("ui/layout.zig");
-pub const Element = @import("ui/element.zig").Element;
 pub const style = @import("ui/style.zig");
+pub const Element = elmnt.Element;
 
 const Blit = draw.Blit;
 const BlitFlags = draw.BlitFlags;
+
+const SizeFn  = elmnt.SizeFn;
+const LayoutFn  = elmnt.LayoutFn;
+const RenderFn  = elmnt.RenderFn;
 
 pub const Event = enum {
     MousePressed,
@@ -33,10 +38,10 @@ pub const EventData = union(Event) {
 pub const Listener = struct {
     el: *Element,
     event: Event,
-    callback: fn (*Element, EventData) void,
+    callback: ListenFn,
 };
 
-pub const ListenFn = fn (*Element, EventData) void;
+pub const ListenFn = fn (*Element, EventData) bool;
 
 pub const Stage = struct {
     alloc: std.mem.Allocator,
@@ -94,11 +99,13 @@ pub const Stage = struct {
         }
     }
 
-    pub fn dispatch(this: *@This(), el: *Element, event: EventData) void {
+    pub fn dispatch(this: *@This(), el: *Element, event: EventData) bool {
         for (this.event_listeners.items) |listener| {
             if (listener.el != el or listener.event != event) continue;
-            listener.callback(el, event);
+            const stop = listener.callback(el, event);
+            if (stop) return true;
         }
+        return false;
     }
 
     pub fn update(this: *@This()) void {
@@ -130,6 +137,13 @@ pub const Stage = struct {
 
     pub fn render(this: @This()) void {
         this.root.render(.background);
+    }
+
+    pub fn element(this: *@This(), self: ?*anyopaque, sizeFn: SizeFn, layoutFn: LayoutFn, renderFn: ?RenderFn) !*Element {
+        var el = try this.alloc.create(Element);
+        const ptr: *anyopaque = self orelse el;
+        el.* = Element.init(this, ptr, sizeFn, layoutFn, renderFn);
+        return el;
     }
 
     pub fn hdiv(this: *@This()) !*Element {

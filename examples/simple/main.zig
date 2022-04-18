@@ -21,42 +21,49 @@ var float: *ui.Element = undefined;
 var grabbed: ?*ui.Element = null;
 var grab_point: ?geom.Vec2 = null;
 
-fn float_release(_: *ui.Element, _: ui.EventData) void {
+fn float_release(_: *ui.Element, _: ui.EventData) bool {
     grabbed = null;
     grab_point = null;
+    return false;
 }
 
-fn float_pressed(el: *ui.Element, event: ui.EventData) void {
+fn float_pressed(el: *ui.Element, event: ui.EventData) bool {
     const pos = event.MousePressed;
     const diff = pos - el.size.pos;
     grab_point = diff;
     grabbed = el;
     el.move_to_front();
+    return false;
 }
 
-fn float_drag(el: *ui.Element, _: ui.EventData) void {
+fn float_drag(el: *ui.Element, _: ui.EventData) bool {
     if (grabbed) |grab| {
         if (grab == el) {
             // Reset the mouse_state
             grab.mouse_state = .Hover;
         }
     }
+    return false;
 }
 
-fn float_delete(el: *ui.Element, _: ui.EventData) void {
+fn float_delete(el: *ui.Element, _: ui.EventData) bool {
     el.remove();
+    return false;
 }
 
-fn float_show(_: *ui.Element, _: ui.EventData) void {
+fn float_show(_: *ui.Element, _: ui.EventData) bool {
     float.hidden = false;
+    return false;
 }
 
-fn float_hide(_: *ui.Element, _: ui.EventData) void {
+fn float_hide(_: *ui.Element, _: ui.EventData) bool {
     float.hidden = true;
+    return false;
 }
 
-fn float_toggle(_: *ui.Element, _: ui.EventData) void {
+fn float_toggle(_: *ui.Element, _: ui.EventData) bool {
     float.hidden = !float.hidden;
+    return false;
 }
 
 export fn start() void {
