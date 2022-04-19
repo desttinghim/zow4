@@ -25,6 +25,33 @@ pub fn addWasm4RunStep(b: *std.build.Builder, name: []const u8, cart: *std.build
     run.dependOn(&w4native.step);
 }
 
+pub fn addWasmOpt(b: *std.build.Builder, name: []const u8, cart: *std.build.LibExeObjStep) !*std.build.Step {
+    const prefix = b.getInstallPath(.lib, "");
+    const opt = b.addSystemCommand(&[_][]const u8{
+        "wasm-opt",
+        "-Oz",
+        "--strip-debug",
+        "--strip-producers",
+        "--zero-filled-memory",
+    });
+
+    opt.addArtifactArg(cart);
+    const cartname = try std.fmt.allocPrint(b.allocator, "{s}{s}", .{ name, ".wasm" });
+    defer b.allocator.free(cartname);
+    const optout = try std.fs.path.join(b.allocator, &.{ prefix, cartname });
+    defer b.allocator.free(optout);
+    opt.addArgs(&.{ "--output", optout });
+
+    const stepname = try std.fmt.allocPrint(b.allocator, "{s}-opt", .{name});
+    defer b.allocator.free(stepname);
+    const msg = try std.fmt.allocPrint(b.allocator, "Run wasm-opt on {s}, producing {s}", .{cart.name, cartname});
+    defer b.allocator.free(msg);
+    const opt_step = b.step(stepname, msg);
+    opt_step.dependOn(&cart.step);
+    opt_step.dependOn(&opt.step);
+    return opt_step;
+}
+
 pub fn addWasm4Cart(b: *std.build.Builder, name: []const u8, path: []const u8) !*std.build.LibExeObjStep {
     const mode = b.standardReleaseOptions();
     const lib = b.addSharedLibrary(name, path, .unversioned);
@@ -46,8 +73,7 @@ pub fn addWasm4Cart(b: *std.build.Builder, name: []const u8, path: []const u8) !
     return lib;
 }
 
-
-pub fn build(b: *std.build.Builder) void {
+pub fn build(b: *std.build.Builder) !void {
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
@@ -57,28 +83,37 @@ pub fn build(b: *std.build.Builder) void {
     input.addPackage(pkgs.wasm4);
     input.install();
 
-    const heap = b.addStaticLibrary("heap", "src/heap.zig");
-    heap.setBuildMode(mode);
-    heap.addPackage(pkgs.wasm4);
-    heap.install();
-
     try tests(b, mode);
 
     const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
     example.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-example", example);
+    const example_opt = try addWasmOpt(b, "example", example);
 
     const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
     counter.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-counter", counter);
+    const counter_opt = try addWasmOpt(b, "counter", counter);
 
     const bezier = try addWasm4Cart(b, "bezier", "examples/bezier.zig");
     bezier.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-bezier", bezier);
+    const bezier_opt = try addWasmOpt(b, "bezier", bezier);
 
     const uicontext = try addWasm4Cart(b, "uicontext", "examples/uicontext.zig");
     uicontext.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-uicontext", uicontext);
+    const uicontext_opt = try addWasmOpt(b, "uicontext", uicontext);
+
+    const optimize_step = b.step("opt", "Builds example carts and optimizes them with wasm-opt (must be installed)");
+    optimize_step.dependOn(example_opt);
+    optimize_step.dependOn(counter_opt);
+    optimize_step.dependOn(bezier_opt);
+    optimize_step.dependOn(uicontext_opt);
+    if (mode == .ReleaseSmall) {
+        b.getInstallStep().dependOn(optimize_step);
+        try optimize_step.make();
+    }
 }
 
 fn tests(b: *std.build.Builder, mode: std.builtin.Mode) !void {
