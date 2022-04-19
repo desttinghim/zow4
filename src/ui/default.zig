@@ -10,7 +10,54 @@ const Node = DefaultUIContext.Node;
 
 const Button = struct {
     label: []const u8,
-    state: union(enum) { Open, Hover, Pressed, Clicked: u8 } = .Open,
+    state: enum { Open, Hover, Pressed, Clicked } = .Open,
+    clicked: u8 = 0,
+
+    pub fn update(node: Node, data: Button) Node {
+        var new_button = data;
+        new_button.clicked -|= 1;
+        switch (data.state) {
+            .Open => {
+                if (node.pointer_over) {
+                    new_button.state = .Hover;
+                } else {
+                    new_button.state = .Open;
+                }
+            },
+            .Hover => {
+                if (node.pointer_pressed) {
+                    new_button.state = .Pressed;
+                } else if (node.pointer_over) {
+                    new_button.state = .Hover;
+                } else {
+                    new_button.state = .Open;
+                }
+            },
+            .Pressed => {
+                if (!node.pointer_over) {
+                    new_button.state = .Open;
+                } else if (!node.pointer_pressed) {
+                    new_button.state = .Clicked;
+                } else {
+                    new_button.state = .Pressed;
+                }
+            },
+            .Clicked => {
+                if (!node.pointer_over) {
+                    new_button.state = .Open;
+                } else {
+                    new_button.state = .Hover;
+                }
+            },
+        }
+        if (data.state == .Clicked) {
+            w4.trace("later");
+            new_button.clicked = 15;
+        }
+        var new_node = node;
+        new_node.data = .{ .Button = new_button };
+        return new_node;
+    }
 };
 
 /// A simple default UI
@@ -58,7 +105,7 @@ pub const DefaultUI = union(enum) {
             switch (data) {
                 .Label => {},
                 .Image => {},
-                .Button => {},
+                .Button => |btn| return Button.update(node, btn),
             }
         }
         return node;
@@ -87,30 +134,33 @@ pub const DefaultUI = union(enum) {
                     var sizex = @floatToInt(u32, ui.rect_size(node.bounds)[0]);
                     var sizey = @floatToInt(u32, ui.rect_size(node.bounds)[1]);
 
-                    switch (btn.state) {
-                        .Open, .Hover => {
-                            w4.DRAW_COLORS.* = 0x01;
-                            w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
-                            w4.DRAW_COLORS.* = 0x04;
-                            // Render "Shadow"
-                            w4.hline(left + 2, bottom - 1, sizex - 2);
-                            w4.vline(right - 1, top + 2, sizey - 2);
-                            // Render "Side"
-                            w4.hline(left + 1, bottom - 2, sizex - 2);
-                            w4.vline(right - 2, top + 1, sizey - 2);
-                            if (btn.state == .Hover) {
-                                w4.DRAW_COLORS.* = 0x41;
-                                w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
-                            }
-                        },
-                        .Pressed => {
-                            w4.DRAW_COLORS.* = 0x44;
-                            w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
-                        },
-                        .Clicked => {
-                            w4.DRAW_COLORS.* = 0x44;
-                            w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
-                        },
+                    // Clear background
+                    w4.DRAW_COLORS.* = 0x01;
+                    w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
+                    if (btn.clicked > 0) {
+                        w4.DRAW_COLORS.* = 0x44;
+                        w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
+                    } else {
+                        switch (btn.state) {
+                            .Open, .Hover => {
+                                w4.DRAW_COLORS.* = 0x04;
+                                // Render "Shadow"
+                                w4.hline(left + 2, bottom - 1, sizex - 2);
+                                w4.vline(right - 1, top + 2, sizey - 2);
+                                // Render "Side"
+                                w4.hline(left + 1, bottom - 2, sizex - 2);
+                                w4.vline(right - 2, top + 1, sizey - 2);
+                                if (btn.state == .Hover) {
+                                    w4.DRAW_COLORS.* = 0x41;
+                                    w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
+                                }
+                            },
+                            .Pressed => {
+                                w4.DRAW_COLORS.* = 0x44;
+                                w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
+                            },
+                            .Clicked => {},
+                        }
                     }
                     w4.DRAW_COLORS.* = 0x04;
                     w4.textUtf8(btn.label.ptr, btn.label.len, left + 2, top + 2);

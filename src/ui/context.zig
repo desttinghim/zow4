@@ -14,28 +14,32 @@ pub const Event = enum {
     PointerRelease,
 };
 
-pub const EventData = struct {
-    event: Event,
-    pos: Vec,
-    button: PointerButton,
+pub const InputData = struct {
+    // event: Event,
+    pointer: PointerData,
+    keys: KeyData,
 };
 
-pub const PointerButton = struct {
+pub const PointerData = struct {
     left: bool,
     right: bool,
     middle: bool,
+    pos: Vec,
+};
+
+pub const KeyData = struct {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+    accept: bool,
+    reject: bool,
 };
 
 pub const Vec = @Vector(2, f32);
 pub fn vec_double(vec: Vec) @Vector(4, f32) {
     return .{ vec[0], vec[1], vec[0], vec[1] };
 }
-// struct {
-//     x: f32,
-//     y: f32,
-
-//     pub fn mul(lhs: @This(), rhs: )
-// };
 
 /// Represents a rectangle as .{ left, top, right, bottom }
 pub const Rect = @Vector(4, f32);
@@ -66,23 +70,6 @@ pub fn rect_contains(rect: Rect, vec: Vec) bool {
 pub fn rect_shift(rect: Rect, vec: Vec) Rect {
     return rect + vec_double(vec);
 }
-// struct {
-//     top: f32,
-//     left: f32,
-//     right: f32,
-//     bottom: f32,
-
-//     pub fn top_left(this: @This()) Vec {
-//         return Vec{.x = this.left, .y = this.top};
-//     }
-
-//     pub fn width(this: @This()) f32 {
-//         return this.right - this.left;
-//     }
-//     pub fn height(this: @This()) f32 {
-//         return this.bottom - this.top;
-//     }
-// };
 
 /// Available layout algorithms
 pub const Layout = union(enum) {
@@ -132,6 +119,8 @@ pub fn UIContext(comptime T: type) type {
 
         pub const Node = struct {
             hidden: bool = false,
+            pointer_over: bool = false,
+            pointer_pressed: bool = false,
             /// How many descendants this node has
             children: usize = 0,
             /// A unique handle
@@ -186,22 +175,34 @@ pub fn UIContext(comptime T: type) type {
         }
 
         /// Call this method every time input is recieved
-        pub fn update(this: *@This(), event: Event) void {
+        pub fn update(this: *@This(), inputs: InputData) void {
+            // const x = inputs.pointer.pos[0];
+            // const y = inputs.pointer.pos[1];
+            // w4.tracef("%f, %f", x, y);
             var i: usize = 0;
+            // TODO: find top element and consume pointer events
             while (i < this.nodes.items.len) : (i += 1) {
                 const node = this.nodes.items[i];
                 if (node.hidden) {
                     i += node.children;
                     continue;
                 }
-                if (!rect_contains(node.bounds, event.pos))
-                    this.nodes.items[i] = this.updateFn(node);
+                if (rect_contains(node.bounds, inputs.pointer.pos)) {
+                    this.nodes.items[i].pointer_over = true;
+                    if (inputs.pointer.left) {
+                        this.nodes.items[i].pointer_pressed = true;
+                    }
+                } else {
+                    this.nodes.items[i].pointer_over = false;
+                    this.nodes.items[i].pointer_pressed = false;
+                }
+                this.nodes.items[i] = this.updateFn(node);
             }
         }
 
         pub fn paint(this: *@This()) void {
             var i: usize = 0;
-            while (i < this.nodes.items.len ) : (i += 1) {
+            while (i < this.nodes.items.len) : (i += 1) {
                 const node = this.nodes.items[i];
                 if (node.hidden) {
                     i += node.children;

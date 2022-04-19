@@ -2,8 +2,8 @@ const std = @import("std");
 const w4 = @import("wasm4");
 
 // pub var heap: *[44223]u8 = w4.PROGRAM_MEMORY[14752..];
-pub var heapdata: [44223]u8 = undefined;
-pub var heap: *[44223]u8 = &heapdata;
+pub var heapdata: [40000]u8 = undefined;
+pub var heap: *[40000]u8 = &heapdata;
 
 pub fn init() std.heap.FixedBufferAllocator {
     return std.heap.FixedBufferAllocator.init(heap);

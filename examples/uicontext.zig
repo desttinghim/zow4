@@ -1,6 +1,7 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
+const input = zow4.input;
 
 var app: App = undefined;
 
@@ -48,11 +49,9 @@ const App = struct {
             },
         } });
 
-        _ = try this.ui.insert(null, .{ .data = .{
-            .Button = .{
-                .label = "uicontext",
-            }
-        } });
+        _ = try this.ui.insert(null, .{ .data = .{ .Button = .{
+            .label = "uicontext",
+        } } });
 
         _ = try this.ui.insert(0, .{ .data = .{
             .Label = "uicontext",
@@ -65,6 +64,29 @@ const App = struct {
 
     fn update(this: *@This()) !void {
         _ = this;
+        const mouse_pos = input.mousepos();
+        const mouse_posf = @Vector(2,f32){ @intToFloat(f32, mouse_pos[0]), @intToFloat(f32, mouse_pos[1]) };
+        // w4.tracef("%d, %d", mouse_pos[0], mouse_pos[1]);
+        this.ui.update(.{
+            .pointer = .{
+                .left = input.mouse(.left),
+                .right = input.mouse(.right),
+                .middle = input.mouse(.middle),
+                .pos = mouse_pos,
+            },
+            .keys = .{
+                .up = input.btn(.one, .up),
+                .down = input.btn(.one, .down),
+                .left = input.btn(.one, .left),
+                .right = input.btn(.one, .right),
+                .accept = input.btn(.one, .x),
+                .reject = input.btn(.one, .z),
+            },
+        });
+        var buf: [100]u8 = undefined;
+        var msg = std.fmt.bufPrint(&buf, "{}, {}", .{ mouse_pos[0], mouse_pos[1] }) catch "huh";
+        w4.textUtf8(msg.ptr, msg.len, 0, 80);
         this.ui.paint();
+        input.update();
     }
 };
