@@ -176,21 +176,16 @@ pub fn UIContext(comptime T: type) type {
                     try this.nodes.insert(index, node);
                     this.nodes.items[index].handle = handle;
 
-                    var parent_count: usize = 0;
-                    parent_count += 1;
                     this.nodes.items[parent].children += 1;
                     var parent_iter = this.get_parent_iter(parent);
                     while (parent_iter.next()) |ancestor| {
-                        parent_count += 1;
                         this.nodes.items[ancestor].children += 1;
                     }
-                    w4.tracef("parent count %d", parent_count);
                 } else {
                     no_parent = true;
                 }
             }
             if (no_parent) {
-                w4.tracef("no parent");
                 try this.nodes.append(node);
                 index = this.nodes.items.len - 1;
                 this.nodes.items[index].handle = handle;
