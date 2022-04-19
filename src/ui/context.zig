@@ -143,7 +143,7 @@ pub fn UIContext(comptime T: type) type {
             /// What layout function to use on children
             layout: Layout = .Relative,
             /// User specified type
-            data: T,
+            data: ?T = null,
         };
 
         pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
@@ -164,17 +164,24 @@ pub fn UIContext(comptime T: type) type {
             this.modified = true;
             const handle = this.handle_count;
             this.handle_count += 1;
+            var index: usize = undefined;
             if (parent_opt) |parent| {
-                w4.trace("insert with parent");
-                try this.nodes.insert(parent + 1, node);
-                this.nodes.items[parent + 1].handle = handle;
+                index = parent + 1;
                 this.nodes.items[parent].children += 1;
+                if (this.nodes.items.len == 1) {
+                    try this.nodes.append(node);
+                } else {
+                    try this.nodes.insert(index, node);
+                }
+                this.nodes.items[index].handle = handle;
             } else {
-                w4.trace("insert no parent");
                 try this.nodes.append(node);
-                this.nodes.items[this.nodes.items.len - 1].handle = handle;
+                index = this.nodes.items.len - 1;
+                this.nodes.items[index].handle = handle;
             }
-            w4.tracef("%d nodes", this.nodes.items.len);
+            if (node.data) |data| {
+                this.nodes.items[index].min_size = this.sizeFn(data);
+            }
             return handle;
         }
 
@@ -194,7 +201,7 @@ pub fn UIContext(comptime T: type) type {
 
         pub fn paint(this: *@This()) void {
             var i: usize = 0;
-            while (i < this.nodes.items.len) : (i += 1) {
+            while (i < this.nodes.items.len ) : (i += 1) {
                 const node = this.nodes.items[i];
                 if (node.hidden) {
                     i += node.children;
@@ -218,18 +225,17 @@ pub fn UIContext(comptime T: type) type {
             if (this.nodes.items.len == 0) return;
 
             // Queue determines next item to run layout on
-            w4.trace("queue");
             var queue = std.PriorityQueue(NodeDepth, void, order_node_depth).init(this.alloc, {});
             defer queue.deinit();
 
             {
                 var childIter = this.get_root_iter();
-                w4.trace("childIter");
+                const pos = top_left(screen);
                 // Layout top level
-                while (childIter.next()) |child| {
-                    this.nodes.items[child].bounds = screen;
+                while (childIter.next()) |childi| {
+                    const child = this.nodes.items[childi];
+                    this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
                 }
-                w4.trace("top level rect");
             }
 
             {
@@ -246,8 +252,12 @@ pub fn UIContext(comptime T: type) type {
                 var childIter = this.get_child_iter(i);
                 switch (node.layout) {
                     .Relative => {
-                        while (childIter.next()) |child| {
-                            this.nodes.items[child].bounds = node.bounds;
+                        const pos = top_left(node.bounds);
+                        // Layout top level
+                        while (childIter.next()) |childi| {
+                            try queue.add(NodeDepth{ .node = childi, .depth = 0 });
+                            const child = this.nodes.items[childi];
+                            this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
                         }
                     },
                     .Anchor => |anchor_data| {
@@ -256,8 +266,9 @@ pub fn UIContext(comptime T: type) type {
                             top_left(node.bounds),
                         );
                         const margin = anchor + anchor_data.margin;
-                        while (childIter.next()) |child| {
-                            this.nodes.items[child].bounds = margin;
+                        while (childIter.next()) |childi| {
+                            try queue.add(NodeDepth{ .node = childi, .depth = 0 });
+                            this.nodes.items[childi].bounds = margin;
                         }
                     },
                 }
@@ -269,7 +280,7 @@ pub fn UIContext(comptime T: type) type {
             index: usize,
             end: usize,
             pub fn next(this: *@This()) ?usize {
-                if (this.index > this.end) return null;
+                if (this.index > this.end or this.index > this.nodes.len - 1) return null;
                 const index = this.index;
                 const node = this.nodes[this.index];
                 this.index += node.children + 1;
@@ -361,49 +372,3 @@ pub fn UIContext(comptime T: type) type {
         }
     };
 }
-
-// fn layout_grid(columns: []const f32, nodetree: []Node) void {
-//     const grid = nodetree[0];
-//     var total: f32 = 0;
-//     for (columns) |col| {
-//         total += col;
-//     }
-//     // Start with the first child
-//     var index: usize = 1;
-//     var which: usize = 0;
-//     var bounds: ui.Rect = grid.bounds;
-//     const width = bounds.width();
-//     var left = bounds.left;
-//     var row_height: f32 = 0;
-
-//     // Iterate over children
-//     while (index < nodetree.len) {
-//         const child = nodetree[index];
-//         // Skip over children's children, we only care about direct descendants
-//         defer index += child.children + 1;
-//         defer which += 1;
-
-//         const col = which % columns.len;
-//         // const row = @divFloor(which, total);
-
-//         if (col == 0) {
-//             // New row, recalculate bounds
-//             left = bounds.left;
-//             bounds.top += row_height;
-//             row_height = 0;
-//             var row_index = 0;
-//             while (row_index < columns.len) : (row_index += 1) {
-//                 // TODO: Iterate over row and calculate row height
-//             }
-//         }
-//         const col_size = (columns[col] / total) * width;
-//         var child_bounds = ui.Rect{
-//             .top = bounds.top,
-//             .left = left,
-//             .right = left + col_size,
-//             .bottom = row_height,
-//         };
-//         left = child_bounds.right;
-//         child.bounds = child_bounds;
-//     }
-// }

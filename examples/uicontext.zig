@@ -41,8 +41,17 @@ const App = struct {
             .alloc = alloc,
         };
 
+        _ = try this.ui.insert(null, .{ .layout = .{
+            .Anchor = .{
+                .anchor = .{ 0.5, 0.5, 0.5, 0.5 },
+                .margin = .{ -16, -4, 16, 4 },
+            },
+        } });
+
         _ = try this.ui.insert(null, .{ .data = .{
-            .Label = "uicontext",
+            .Button = .{
+                .label = "uicontext",
+            }
         } });
 
         _ = try this.ui.insert(0, .{ .data = .{
