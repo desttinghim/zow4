@@ -6,60 +6,7 @@ const ui = @import("context.zig");
 const UIContext = @import("context.zig").UIContext;
 
 pub const DefaultUIContext = UIContext(DefaultUI);
-const Node = DefaultUIContext.Node;
-
-const Button = struct {
-    label: []const u8,
-    state: enum { Open, Hover, Pressed, Clicked } = .Open,
-    clicked: u8 = 0,
-
-    pub fn update(node: Node, data: Button) Node {
-        var new_button = data;
-        new_button.clicked -|= 1;
-        switch (data.state) {
-            .Open => {
-                if (node.pointer_over) {
-                    new_button.state = .Hover;
-                } else {
-                    new_button.state = .Open;
-                }
-            },
-            .Hover => {
-                if (node.pointer_pressed) {
-                    new_button.state = .Pressed;
-                } else if (node.pointer_over) {
-                    new_button.state = .Hover;
-                } else {
-                    new_button.state = .Open;
-                }
-            },
-            .Pressed => {
-                if (!node.pointer_over) {
-                    new_button.state = .Open;
-                } else if (!node.pointer_pressed) {
-                    new_button.state = .Clicked;
-                    new_button.clicked = 5;
-                } else {
-                    new_button.state = .Pressed;
-                }
-            },
-            .Clicked => {
-                if (new_button.clicked > 0) {
-                    new_button.state = .Clicked;
-                } else if (node.pointer_pressed) {
-                    new_button.clicked = 5;
-                } else if (!node.pointer_over) {
-                    new_button.state = .Open;
-                } else {
-                    new_button.state = .Hover;
-                }
-            },
-        }
-        var new_node = node;
-        new_node.data = .{ .Button = new_button };
-        return new_node;
-    }
-};
+pub const Node = DefaultUIContext.Node;
 
 /// A simple default UI
 pub const DefaultUI = union(enum) {
@@ -68,7 +15,7 @@ pub const DefaultUI = union(enum) {
     /// Draws an image to the screen. Assumes there is another array containing image info
     Image: *draw.Blit,
     /// Button
-    Button: Button,
+    Button: []const u8,
 
     pub fn init(alloc: std.mem.Allocator) DefaultUIContext {
         return DefaultUIContext.init(alloc, size, update, paint);
@@ -89,8 +36,8 @@ pub const DefaultUI = union(enum) {
                     blit_size[0], blit_size[1],
                 };
             },
-            .Button => |btn| {
-                const label_size = text.text_size(btn.label);
+            .Button => |btn_label| {
+                const label_size = text.text_size(btn_label);
                 const padding = 6; // 3 pixels left, 2 pixels right
                 return .{
                     label_size[0] + padding, label_size[1] + padding,
@@ -104,7 +51,7 @@ pub const DefaultUI = union(enum) {
             switch (data) {
                 .Label => {},
                 .Image => {},
-                .Button => |btn| return Button.update(node, btn),
+                .Button => {},
             }
         }
         return node;
@@ -133,7 +80,7 @@ pub const DefaultUI = union(enum) {
                 .Image => |blit| {
                     blit.blit(.{ node.bounds[0], node.bounds[1] });
                 },
-                .Button => |btn| {
+                .Button => |btn_label| {
                     var left = ui.left(node.bounds);
                     var right = ui.right(node.bounds);
                     var top = ui.top(node.bounds);
@@ -154,7 +101,7 @@ pub const DefaultUI = union(enum) {
                     w4.DRAW_COLORS.* = 0x01;
                     w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
                     var dark = false;
-                    switch (btn.state) {
+                    switch (node.pointer_state) {
                         .Open, .Hover => {
                             w4.DRAW_COLORS.* = 0x04;
                             // Render "Shadow"
@@ -163,7 +110,7 @@ pub const DefaultUI = union(enum) {
                             // Render "Side"
                             w4.hline(left + 1, bottom - 2, sizex - 2);
                             w4.vline(right - 2, top + 1, sizey - 2);
-                            if (btn.state == .Hover) {
+                            if (node.pointer_state == .Hover) {
                                 w4.DRAW_COLORS.* = 0x41;
                                 w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
                             }
@@ -181,7 +128,7 @@ pub const DefaultUI = union(enum) {
                     }
                     w4.DRAW_COLORS.* = if (dark) 0x01 else 0x04;
                     const offset: i32 = if (dark) 4 else 3;
-                    w4.textUtf8(btn.label.ptr, btn.label.len, left + offset, top + offset);
+                    w4.textUtf8(btn_label.ptr, btn_label.len, left + offset, top + offset);
                 },
             }
         }

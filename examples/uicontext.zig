@@ -31,6 +31,22 @@ const App = struct {
     fba: std.heap.FixedBufferAllocator,
     alloc: std.mem.Allocator,
 
+    fn say_hi(node: UI.Node, event: zow4.ui.context.Event) void {
+        _ = node;
+        _ = event;
+        w4.trace("hi");
+    }
+    fn say_bye(node: UI.Node, event: zow4.ui.context.Event) void {
+        _ = node;
+        _ = event;
+        w4.trace("bye");
+    }
+    fn say_click(node: UI.Node, event: zow4.ui.context.Event) void {
+        _ = node;
+        _ = event;
+        w4.trace("click!");
+    }
+
     fn init() !@This() {
         // Initialize dynamic memory
         var fba = zow4.heap.init();
@@ -49,41 +65,24 @@ const App = struct {
         const anchor = try this.ui.insert(null, .{ .layout = .{
             .Anchor = .{
                 .anchor = .{ 0, 0, 100, 100 },
-                .margin = .{ 40, 40, -40, -40 },
+                .margin = .{ 32, 32, -32, -32 },
             },
         } });
 
         const vlist = try this.ui.insert(relative, .{ .layout = .{ .VList = .{} } });
 
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "uicontext",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "blah",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "thing",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "\x80",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "\x81",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "\x84",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "\x85",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "\x86",
-        } } });
-        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
-            .label = "\x87",
-        } } });
+        const btn = try this.ui.insert(vlist, .{
+            .capture_pointer = true,
+            .data = .{
+                .Button = "uicontext",
+            },
+        });
+        try this.ui.listen(btn, .PointerPress, say_hi);
+        try this.ui.listen(btn, .PointerRelease, say_bye);
+        try this.ui.listen(btn, .PointerClick, say_click);
 
         _ = try this.ui.insert(anchor, .{
+            .capture_pointer = true,
             .has_background = true,
             .data = .{
                 .Label = "uicontext",

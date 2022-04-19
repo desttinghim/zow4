@@ -12,6 +12,9 @@ pub const Event = enum {
     PointerMotion,
     PointerPress,
     PointerRelease,
+    PointerClick,
+    PointerEnter,
+    PointerLeave,
 };
 
 pub const InputData = struct {
@@ -115,9 +118,10 @@ pub fn UIContext(comptime T: type) type {
         pub const SizeFn = fn (T) Vec;
 
         pub const Listener = struct {
+            const Fn = fn (Node, Event) void;
             handle: usize,
             event: Event,
-            callback: fn (Node, Event) void,
+            callback: Fn,
         };
 
         pub const Node = struct {
@@ -125,8 +129,14 @@ pub fn UIContext(comptime T: type) type {
             hidden: bool = false,
             /// Indicates whether the rect has a background and
             has_background: bool = false,
+            /// If the node captures pointer input
+            capture_pointer: bool = false,
+            /// Whether the pointer is over the node
             pointer_over: bool = false,
+            /// If the pointer is pressed over the node
             pointer_pressed: bool = false,
+            /// Pointer FSM
+            pointer_state: enum { Open, Hover, Pressed, Clicked } = .Open,
             /// How many descendants this node has
             children: usize = 0,
             /// A unique handle
@@ -141,7 +151,7 @@ pub fn UIContext(comptime T: type) type {
             data: ?T = null,
 
             fn print_debug(this: @This()) void {
-                const typename: [*:0]const u8 = @tagName(this);
+                const typename: [*:0]const u8 = @tagName(this.layout);
                 const dataname: [*:0]const u8 = if (this.data) |data| @tagName(data) else "null";
                 w4.tracef("type %s, data %s, children %d", typename, dataname, this.children);
             }
@@ -156,8 +166,7 @@ pub fn UIContext(comptime T: type) type {
                 .listeners = ArrayList(Listener).init(alloc),
                 .sizeFn = sizeFn,
                 .updateFn = updateFn,
-                .paintFn = paintFn
-,
+                .paintFn = paintFn,
             };
         }
 
@@ -196,24 +205,106 @@ pub fn UIContext(comptime T: type) type {
             return handle;
         }
 
+        pub fn listen(this: *@This(), handle: usize, event: Event, listenFn: Listener.Fn) !void {
+            try this.listeners.append(.{
+                .handle = handle,
+                .event = event,
+                .callback = listenFn,
+            });
+        }
+
+        pub fn dispatch(this: *@This(), handle: usize, event: Event) void {
+            this.dispatch_raw(this.get_index_by_handle(handle), event);
+        }
+
+        fn dispatch_raw(this: *@This(), index: usize, event: Event) void {
+            const node = this.nodes.items[index];
+            for (this.listeners.items) |listener| {
+                if (listener.handle == node.handle and event == listener.event) {
+                    listener.callback(node, event);
+                }
+            }
+            var parent_iter = this.get_parent_iter(index);
+            while (parent_iter.next()) |parent_index| {
+                const parent = this.nodes.items[parent_index];
+                for (this.listeners.items) |listener| {
+                    if (listener.handle == parent.handle and event == listener.event) {
+                        listener.callback(parent, event);
+                    }
+                }
+            }
+        }
+
         /// Call this method every time input is recieved
         pub fn update(this: *@This(), inputs: InputData) void {
-            var i: usize = 0;
-            // TODO: find top element and consume pointer events
-            while (i < this.nodes.items.len) : (i += 1) {
-                const node = this.nodes.items[i];
-                if (node.hidden) {
-                    i += node.children;
-                    continue;
+            {
+                // Iterate backwards until we find an element that contains the mouse, then dispatch
+                // the event. Dispatching will bubble the event to the topmost element.
+                var mouse_captured = false;
+                var i = this.nodes.items.len - 1;
+                var run = true;
+                while (run) : (i -|= 1) {
+                    const node = this.nodes.items[i];
+                    defer if (i == 0) {
+                        // TODO: store root listeners
+                        // this.dispatch_root(.PointerRelease);
+                        run = false;
+                    };
+                    if (node.hidden) {
+                        continue;
+                    }
+                    if (rect_contains(node.bounds, inputs.pointer.pos)) {
+                        this.nodes.items[i].pointer_over = true;
+                        this.nodes.items[i].pointer_pressed = inputs.pointer.left;
+                        if (node.capture_pointer and !mouse_captured) {
+                            mouse_captured = true;
+                            var mouse_enter = false;
+                            var mouse_pressed = false;
+                            var mouse_released = false;
+                            // Node now contains the old state
+                            if (!node.pointer_over) {
+                                this.dispatch_raw(i, .PointerEnter);
+                                mouse_enter = true;
+                            }
+                            if (node.pointer_pressed and !inputs.pointer.left) {
+                                this.dispatch_raw(i, .PointerRelease);
+                                mouse_released = true;
+                            }
+                            if (!node.pointer_pressed and inputs.pointer.left) {
+                                this.dispatch_raw(i, .PointerPress);
+                                mouse_pressed = true;
+                            }
+                            const nptr = &this.nodes.items[i].pointer_state;
+                            switch (node.pointer_state) {
+                                .Open => {
+                                    if (mouse_enter) nptr.* = .Hover;
+                                    if (mouse_pressed) nptr.* = .Pressed;
+                                },
+                                .Hover => {
+                                    if (mouse_pressed) nptr.* = .Pressed;
+                                },
+                                .Pressed => {
+                                    if (mouse_released) nptr.* = .Clicked;
+                                },
+                                .Clicked => {
+                                    this.dispatch_raw(i, .PointerClick);
+                                    nptr.* = .Open;
+                                },
+                            }
+                        }
+                    } else {
+                        this.nodes.items[i].pointer_over = false;
+                        this.nodes.items[i].pointer_pressed = false;
+                        if (node.pointer_over) {
+                            this.nodes.items[i].pointer_state = .Open;
+                            this.dispatch_raw(i, .PointerLeave);
+                        }
+                    }
                 }
-                if (rect_contains(node.bounds, inputs.pointer.pos)) {
-                    this.nodes.items[i].pointer_over = true;
-                    this.nodes.items[i].pointer_pressed = inputs.pointer.left;
-                } else {
-                    this.nodes.items[i].pointer_over = false;
-                    this.nodes.items[i].pointer_pressed = false;
-                }
-                this.nodes.items[i] = this.updateFn(this.nodes.items[i]);
+            }
+
+            for (this.nodes.items) |node, i| {
+                this.nodes.items[i] = this.updateFn(node);
             }
         }
 
@@ -301,8 +392,8 @@ pub fn UIContext(comptime T: type) type {
                 .VList => |vlist_data| {
                     const _left = bounds[0];
                     const _top = bounds[1] + vlist_data.top;
-                    this.nodes.items[child_index].bounds = Rect{_left, _top, _left + child.min_size[0], _top + child.min_size[1]};
-                    return .{ .VList = .{.top = _top + child.min_size[1] } };
+                    this.nodes.items[child_index].bounds = Rect{ _left, _top, _left + child.min_size[0], _top + child.min_size[1] };
+                    return .{ .VList = .{ .top = _top + child.min_size[1] } };
                 },
             }
         }
