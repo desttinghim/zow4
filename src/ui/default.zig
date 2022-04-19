@@ -50,7 +50,7 @@ const Button = struct {
                 }
             },
         }
-        if (data.state == .Clicked) {
+        if (data.state == .Clicked or (new_button.clicked > 0 and node.pointer_over and node.pointer_pressed)) {
             new_button.clicked = 15;
         }
         var new_node = node;
@@ -138,9 +138,11 @@ pub const DefaultUI = union(enum) {
                     // Clear background
                     w4.DRAW_COLORS.* = 0x01;
                     w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
+                    var dark = false;
                     if (btn.clicked > 0) {
                         w4.DRAW_COLORS.* = 0x44;
                         w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
+                        dark = true;
                     } else {
                         switch (btn.state) {
                             .Open, .Hover => {
@@ -163,7 +165,11 @@ pub const DefaultUI = union(enum) {
                             .Clicked => {},
                         }
                     }
-                    w4.DRAW_COLORS.* = 0x04;
+                    if (dark) {
+                        w4.DRAW_COLORS.* = 0x01;
+                    } else {
+                        w4.DRAW_COLORS.* = 0x04;
+                    }
                     w4.textUtf8(btn.label.ptr, btn.label.len, left + 2, top + 2);
                 },
             }

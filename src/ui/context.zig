@@ -204,14 +204,12 @@ pub fn UIContext(comptime T: type) type {
                 }
                 if (rect_contains(node.bounds, inputs.pointer.pos)) {
                     this.nodes.items[i].pointer_over = true;
-                    if (inputs.pointer.left) {
-                        this.nodes.items[i].pointer_pressed = true;
-                    }
+                    this.nodes.items[i].pointer_pressed = inputs.pointer.left;
                 } else {
                     this.nodes.items[i].pointer_over = false;
                     this.nodes.items[i].pointer_pressed = false;
                 }
-                this.nodes.items[i] = this.updateFn(node);
+                this.nodes.items[i] = this.updateFn(this.nodes.items[i]);
             }
         }
 
