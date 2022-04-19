@@ -44,26 +44,25 @@ const App = struct {
 
         this.ui.root_layout = .Fill;
 
-        // 0
         const relative = try this.ui.insert(null, .{ .layout = .Relative });
 
-        // 2
         const anchor = try this.ui.insert(null, .{ .layout = .{
             .Anchor = .{
-                .anchor = .{ 50, 50, 50, 50 },
-                .margin = .{ -40, -4, 4, 40 },
+                .anchor = .{ 0, 0, 100, 100 },
+                .margin = .{ 40, 40, -40, -40 },
             },
         } });
 
-        // 1
         _ = try this.ui.insert(relative, .{ .data = .{ .Button = .{
             .label = "uicontext",
         } } });
 
-        // 3
-        _ = try this.ui.insert(anchor, .{ .data = .{
-            .Label = "uicontext",
-        } });
+        _ = try this.ui.insert(anchor, .{
+            .has_background = true,
+            .data = .{
+                .Label = "uicontext",
+            },
+        });
 
         try this.ui.layout(.{ 0, 0, 160, 160 });
 

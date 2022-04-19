@@ -111,6 +111,19 @@ pub const DefaultUI = union(enum) {
     }
 
     pub fn paint(node: Node) void {
+        if (node.has_background) {
+            var left = ui.left(node.bounds);
+            var top = ui.top(node.bounds);
+
+            const rect_size = ui.rect_size(node.bounds);
+            // Make sure we are at least the minimum size to prevent crashing
+            var sizex = @intCast(u32, rect_size[0]);
+            var sizey = @intCast(u32, rect_size[1]);
+
+            // Clear background
+            w4.DRAW_COLORS.* = 0x41;
+            w4.rect(left, top, sizex, sizey);
+        }
         if (node.data) |data| {
             switch (data) {
                 .Label => |label| {

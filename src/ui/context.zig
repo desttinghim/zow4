@@ -121,7 +121,10 @@ pub fn UIContext(comptime T: type) type {
         };
 
         pub const Node = struct {
+            /// Determines whether the current node and it's children are visible
             hidden: bool = false,
+            /// Indicates whether the rect has a background and
+            has_background: bool = false,
             pointer_over: bool = false,
             pointer_pressed: bool = false,
             /// How many descendants this node has
@@ -153,7 +156,8 @@ pub fn UIContext(comptime T: type) type {
                 .listeners = ArrayList(Listener).init(alloc),
                 .sizeFn = sizeFn,
                 .updateFn = updateFn,
-                .paintFn = paintFn,
+                .paintFn = paintFn
+,
             };
         }
 
@@ -168,17 +172,24 @@ pub fn UIContext(comptime T: type) type {
                 const parent_o = this.get_index_by_handle(parent_handle);
                 if (parent_o) |parent| {
                     index = parent + 1;
-                    this.nodes.items[parent].children += 1;
-                    if (this.get_parent(parent)) |grandparent| {
-                        this.nodes.items[grandparent].children += 1;
-                    }
                     try this.nodes.insert(index, node);
                     this.nodes.items[index].handle = handle;
+
+                    var parent_count: usize = 0;
+                    parent_count += 1;
+                    this.nodes.items[parent].children += 1;
+                    var parent_iter = this.get_parent_iter(parent);
+                    while (parent_iter.next()) |ancestor| {
+                        parent_count += 1;
+                        this.nodes.items[ancestor].children += 1;
+                    }
+                    w4.tracef("parent count %d", parent_count);
                 } else {
                     no_parent = true;
                 }
             }
             if (no_parent) {
+                w4.tracef("no parent");
                 try this.nodes.append(node);
                 index = this.nodes.items.len - 1;
                 this.nodes.items[index].handle = handle;
@@ -191,9 +202,6 @@ pub fn UIContext(comptime T: type) type {
 
         /// Call this method every time input is recieved
         pub fn update(this: *@This(), inputs: InputData) void {
-            // const x = inputs.pointer.pos[0];
-            // const y = inputs.pointer.pos[1];
-            // w4.tracef("%f, %f", x, y);
             var i: usize = 0;
             // TODO: find top element and consume pointer events
             while (i < this.nodes.items.len) : (i += 1) {
@@ -258,9 +266,6 @@ pub fn UIContext(comptime T: type) type {
                 const i = node_depth.node;
                 const depth = node_depth.depth;
                 const node = this.nodes.items[i];
-                // const typename: [*:0]const u8 = @tagName(node.layout);
-                // const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
-                // w4.tracef("node %d, type %s, data %s, depth %d, children %d", i, typename, dataname, depth, node.children);
                 var childIter = this.get_child_iter(i);
                 while (childIter.next()) |childi| {
                     try queue.add(NodeDepth{ .node = childi, .depth = depth + 1 });
@@ -288,10 +293,6 @@ pub fn UIContext(comptime T: type) type {
                         top_left(bounds),
                     );
                     const margin = anchor + anchor_data.margin;
-                    // w4.tracef("size %d, %d, %d, %d", size_doubled[0], size_doubled[1], size_doubled[2], size_doubled[3]);
-                    // w4.tracef("bounds %d, %d, %d, %d", bounds[0], bounds[1], bounds[2], bounds[3]);
-                    // w4.tracef("anchor %d, %d, %d, %d", anchor[0], anchor[1], anchor[2], anchor[3]);
-                    // w4.tracef("margin %d, %d, %d, %d", margin[0], margin[1], margin[2], margin[3]);
                     this.nodes.items[childi].bounds = margin;
                 },
             }
@@ -309,6 +310,8 @@ pub fn UIContext(comptime T: type) type {
                 return index;
             }
         };
+
+        /// Returns an iterator over the direct childtren of given node
         pub fn get_child_iter(this: @This(), index: usize) ChildIter {
             const node = this.nodes.items[index];
             return ChildIter{
@@ -318,6 +321,7 @@ pub fn UIContext(comptime T: type) type {
             };
         }
 
+        /// Returns an iterator over the root's direct children
         pub fn get_root_iter(this: @This()) ChildIter {
             return ChildIter{
                 .nodes = this.nodes.items,
@@ -330,14 +334,9 @@ pub fn UIContext(comptime T: type) type {
         pub fn get_child_count(this: @This(), index: usize) usize {
             const node = this.nodes.items[index];
             if (node.children <= 1) return node.children;
-            const nodetree = this.nodes.items[index..node.children];
             var children: usize = 0;
-            var i: usize = 0;
-            while (i < nodetree.len) : (i += 1) {
-                const child = nodetree[i];
-                i += child.children;
-                children += 1;
-            }
+            var childIter = this.get_child_iter(index);
+            while (childIter.next()) : (children += 1) {}
             return children;
         }
 
@@ -350,6 +349,33 @@ pub fn UIContext(comptime T: type) type {
                 if (node.handle == handle) return i;
             }
             return null;
+        }
+
+        const ParentIter = struct {
+            nodes: []Node,
+            index: usize,
+            child_component: usize,
+            pub fn next(this: *@This()) ?usize {
+                const index = this.index;
+                if (this.index <= 0 or this.index > this.nodes.len) return null;
+                while (this.index > 0) : (this.index -= 1) {
+                    const node = this.nodes[this.index];
+                    if (this.index != index and this.index + node.children >= this.child_component) {
+                        // Never return with the same index as we started with
+                        return this.index;
+                    }
+                    if (this.index == 0) return null;
+                }
+                return null;
+            }
+        };
+
+        pub fn get_parent_iter(this: @This(), index: usize) ParentIter {
+            return ParentIter{
+                .nodes = this.nodes.items,
+                .index = index,
+                .child_component = index,
+            };
         }
 
         /// Get the parent of given element. Returns null if the parent is the root
