@@ -42,18 +42,26 @@ const App = struct {
             .alloc = alloc,
         };
 
-        _ = try this.ui.insert(null, .{ .layout = .{
+        this.ui.root_layout = .Fill;
+
+        // 0
+        const relative = try this.ui.insert(null, .{ .layout = .Relative });
+
+        // 2
+        const anchor = try this.ui.insert(null, .{ .layout = .{
             .Anchor = .{
-                .anchor = .{ 0.5, 0.5, 0.5, 0.5 },
-                .margin = .{ -16, -4, 16, 4 },
+                .anchor = .{ 50, 50, 50, 50 },
+                .margin = .{ -40, -4, 4, 40 },
             },
         } });
 
-        _ = try this.ui.insert(null, .{ .data = .{ .Button = .{
+        // 1
+        _ = try this.ui.insert(relative, .{ .data = .{ .Button = .{
             .label = "uicontext",
         } } });
 
-        _ = try this.ui.insert(0, .{ .data = .{
+        // 3
+        _ = try this.ui.insert(anchor, .{ .data = .{
             .Label = "uicontext",
         } });
 
@@ -65,7 +73,6 @@ const App = struct {
     fn update(this: *@This()) !void {
         _ = this;
         const mouse_pos = input.mousepos();
-        const mouse_posf = @Vector(2,f32){ @intToFloat(f32, mouse_pos[0]), @intToFloat(f32, mouse_pos[1]) };
         // w4.tracef("%d, %d", mouse_pos[0], mouse_pos[1]);
         this.ui.update(.{
             .pointer = .{
@@ -83,9 +90,9 @@ const App = struct {
                 .reject = input.btn(.one, .z),
             },
         });
-        var buf: [100]u8 = undefined;
-        var msg = std.fmt.bufPrint(&buf, "{}, {}", .{ mouse_pos[0], mouse_pos[1] }) catch "huh";
-        w4.textUtf8(msg.ptr, msg.len, 0, 80);
+        // var buf: [100]u8 = undefined;
+        // var msg = std.fmt.bufPrint(&buf, "{}, {}", .{ mouse_pos[0], mouse_pos[1] }) catch "huh";
+        // w4.textUtf8(msg.ptr, msg.len, 0, 80);
         this.ui.paint();
         input.update();
     }

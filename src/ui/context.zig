@@ -36,26 +36,26 @@ pub const KeyData = struct {
     reject: bool,
 };
 
-pub const Vec = @Vector(2, f32);
-pub fn vec_double(vec: Vec) @Vector(4, f32) {
+pub const Vec = @Vector(2, i32);
+pub fn vec_double(vec: Vec) @Vector(4, i32) {
     return .{ vec[0], vec[1], vec[0], vec[1] };
 }
 
 /// Represents a rectangle as .{ left, top, right, bottom }
-pub const Rect = @Vector(4, f32);
-pub fn top(rect: Rect) f32 {
+pub const Rect = @Vector(4, i32);
+pub fn top(rect: Rect) i32 {
     return rect[1];
 }
-pub fn left(rect: Rect) f32 {
+pub fn left(rect: Rect) i32 {
     return rect[0];
 }
 pub fn top_left(rect: Rect) Vec {
     return .{ rect[0], rect[1] };
 }
-pub fn right(rect: Rect) f32 {
+pub fn right(rect: Rect) i32 {
     return rect[2];
 }
-pub fn bottom(rect: Rect) f32 {
+pub fn bottom(rect: Rect) i32 {
     return rect[3];
 }
 pub fn bottom_right(rect: Rect) Vec {
@@ -73,6 +73,8 @@ pub fn rect_shift(rect: Rect, vec: Vec) Rect {
 
 /// Available layout algorithms
 pub const Layout = union(enum) {
+    /// Default layout of root - expands children to fill entire space
+    Fill,
     /// Default layout. Children are positioned relative to the parent with no
     /// attempt made to prevent overlapping.
     Relative,
@@ -97,6 +99,7 @@ pub fn UIContext(comptime T: type) type {
         modified: bool,
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
+        root_layout: Layout = .Relative,
         /// Array of all ui elements
         nodes: ArrayList(Node),
         listeners: ArrayList(Listener),
@@ -133,6 +136,12 @@ pub fn UIContext(comptime T: type) type {
             layout: Layout = .Relative,
             /// User specified type
             data: ?T = null,
+
+            fn print_debug(this: @This()) void {
+                const typename: [*:0]const u8 = @tagName(this);
+                const dataname: [*:0]const u8 = if (this.data) |data| @tagName(data) else "null";
+                w4.tracef("type %s, data %s, children %d", typename, dataname, this.children);
+            }
         };
 
         pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
@@ -154,16 +163,22 @@ pub fn UIContext(comptime T: type) type {
             const handle = this.handle_count;
             this.handle_count += 1;
             var index: usize = undefined;
-            if (parent_opt) |parent| {
-                index = parent + 1;
-                this.nodes.items[parent].children += 1;
-                if (this.nodes.items.len == 1) {
-                    try this.nodes.append(node);
-                } else {
+            var no_parent = parent_opt == null;
+            if (parent_opt) |parent_handle| {
+                const parent_o = this.get_index_by_handle(parent_handle);
+                if (parent_o) |parent| {
+                    index = parent + 1;
+                    this.nodes.items[parent].children += 1;
+                    if (this.get_parent(parent)) |grandparent| {
+                        this.nodes.items[grandparent].children += 1;
+                    }
                     try this.nodes.insert(index, node);
+                    this.nodes.items[index].handle = handle;
+                } else {
+                    no_parent = true;
                 }
-                this.nodes.items[index].handle = handle;
-            } else {
+            }
+            if (no_parent) {
                 try this.nodes.append(node);
                 index = this.nodes.items.len - 1;
                 this.nodes.items[index].handle = handle;
@@ -231,48 +246,56 @@ pub fn UIContext(comptime T: type) type {
 
             {
                 var childIter = this.get_root_iter();
-                const pos = top_left(screen);
+                // const pos = top_left(screen);
                 // Layout top level
                 while (childIter.next()) |childi| {
-                    const child = this.nodes.items[childi];
-                    this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
+                    // const child = this.nodes.items[childi];
+                    // this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], screen[2], screen[3] };
+                    this.run_layout(this.root_layout, screen, childi);
+                    try queue.add(NodeDepth{ .node = childi, .depth = 0 });
                 }
-            }
-
-            {
-                try queue.add(NodeDepth{ .node = 0, .depth = 0 });
             }
 
             while (queue.removeOrNull()) |node_depth| {
                 const i = node_depth.node;
                 const depth = node_depth.depth;
                 const node = this.nodes.items[i];
-                if (i + node.children + 1 < this.nodes.items.len) {
-                    try queue.add(.{ .node = i + node.children + 1, .depth = depth });
-                }
+                // const typename: [*:0]const u8 = @tagName(node.layout);
+                // const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
+                // w4.tracef("node %d, type %s, data %s, depth %d, children %d", i, typename, dataname, depth, node.children);
                 var childIter = this.get_child_iter(i);
-                switch (node.layout) {
-                    .Relative => {
-                        const pos = top_left(node.bounds);
-                        // Layout top level
-                        while (childIter.next()) |childi| {
-                            try queue.add(NodeDepth{ .node = childi, .depth = 0 });
-                            const child = this.nodes.items[childi];
-                            this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
-                        }
-                    },
-                    .Anchor => |anchor_data| {
-                        const anchor = rect_shift(
-                            vec_double((bottom_right(node.bounds) - top_left(node.bounds))) * anchor_data.anchor,
-                            top_left(node.bounds),
-                        );
-                        const margin = anchor + anchor_data.margin;
-                        while (childIter.next()) |childi| {
-                            try queue.add(NodeDepth{ .node = childi, .depth = 0 });
-                            this.nodes.items[childi].bounds = margin;
-                        }
-                    },
+                while (childIter.next()) |childi| {
+                    try queue.add(NodeDepth{ .node = childi, .depth = depth + 1 });
+                    this.run_layout(node.layout, node.bounds, childi);
                 }
+            }
+        }
+
+        fn run_layout(this: *@This(), which_layout: Layout, bounds: Rect, childi: usize) void {
+            const child = this.nodes.items[childi];
+            switch (which_layout) {
+                .Fill => {
+                    this.nodes.items[childi].bounds = bounds;
+                },
+                .Relative => {
+                    const pos = top_left(bounds);
+                    // Layout top level
+                    this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
+                },
+                .Anchor => |anchor_data| {
+                    const MAX = vec_double(.{ 100, 100 });
+                    const size_doubled = vec_double((bottom_right(bounds) - top_left(bounds)));
+                    const anchor = rect_shift(
+                        @divTrunc((MAX - (MAX - anchor_data.anchor)) * size_doubled, MAX),
+                        top_left(bounds),
+                    );
+                    const margin = anchor + anchor_data.margin;
+                    // w4.tracef("size %d, %d, %d, %d", size_doubled[0], size_doubled[1], size_doubled[2], size_doubled[3]);
+                    // w4.tracef("bounds %d, %d, %d, %d", bounds[0], bounds[1], bounds[2], bounds[3]);
+                    // w4.tracef("anchor %d, %d, %d, %d", anchor[0], anchor[1], anchor[2], anchor[3]);
+                    // w4.tracef("margin %d, %d, %d, %d", margin[0], margin[1], margin[2], margin[3]);
+                    this.nodes.items[childi].bounds = margin;
+                },
             }
         }
 
@@ -281,7 +304,7 @@ pub fn UIContext(comptime T: type) type {
             index: usize,
             end: usize,
             pub fn next(this: *@This()) ?usize {
-                if (this.index > this.end or this.index > this.nodes.len - 1) return null;
+                if (this.index > this.end or this.index > this.nodes.len) return null;
                 const index = this.index;
                 const node = this.nodes[this.index];
                 this.index += node.children + 1;
@@ -336,12 +359,13 @@ pub fn UIContext(comptime T: type) type {
             if (id == 0) return null;
             if (id > this.get_count()) return null; // The id is outside of bounds
             var i: usize = id - 1;
-            while (i > 0) : (i -= 1) {
+            while (true) : (i -= 1) {
                 const node = this.nodes.items[i];
                 // If the node's children includes the searched for id, it is a
                 // parent, and our loop will end as soon as we find the first
                 // one
                 if (i + node.children >= id) return i;
+                if (i == 0) break;
             }
             //
             return null;

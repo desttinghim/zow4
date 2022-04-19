@@ -51,7 +51,6 @@ const Button = struct {
             },
         }
         if (data.state == .Clicked) {
-            w4.trace("later");
             new_button.clicked = 15;
         }
         var new_node = node;
@@ -78,23 +77,21 @@ pub const DefaultUI = union(enum) {
             .Label => |label| {
                 const label_size = text.text_size(label);
                 return .{
-                    @intToFloat(f32, label_size[0]),
-                    @intToFloat(f32, label_size[1]),
+                    label_size[0],
+                    label_size[1],
                 };
             },
             .Image => |blit| {
                 const blit_size = blit.get_size();
                 return .{
-                    @intToFloat(f32, blit_size[0]),
-                    @intToFloat(f32, blit_size[1]),
+                    blit_size[0], blit_size[1],
                 };
             },
             .Button => |btn| {
                 const label_size = text.text_size(btn.label);
                 const padding = 4; // 2 pixels on each side
                 return .{
-                    @intToFloat(f32, label_size[0] + padding),
-                    @intToFloat(f32, label_size[1] + padding),
+                    label_size[0] + padding, label_size[1] + padding,
                 };
             },
         }
@@ -116,23 +113,27 @@ pub const DefaultUI = union(enum) {
             switch (data) {
                 .Label => |label| {
                     w4.DRAW_COLORS.* = 0x04;
-                    const x = @floatToInt(i32, node.bounds[0]);
-                    const y = @floatToInt(i32, node.bounds[1]);
-                    w4.textUtf8(label.ptr, label.len, x, y);
+                    w4.textUtf8(label.ptr, label.len, node.bounds[0], node.bounds[1]);
                 },
                 .Image => |blit| {
-                    const x = @floatToInt(i32, node.bounds[0]);
-                    const y = @floatToInt(i32, node.bounds[1]);
-                    blit.blit(.{ x, y });
+                    blit.blit(.{ node.bounds[0], node.bounds[1] });
                 },
                 .Button => |btn| {
-                    var left = @floatToInt(i32, ui.left(node.bounds));
-                    var right = @floatToInt(i32, ui.right(node.bounds));
-                    var top = @floatToInt(i32, ui.top(node.bounds));
-                    var bottom = @floatToInt(i32, ui.bottom(node.bounds));
+                    var left = ui.left(node.bounds);
+                    var right = ui.right(node.bounds);
+                    var top = ui.top(node.bounds);
+                    var bottom = ui.bottom(node.bounds);
 
-                    var sizex = @floatToInt(u32, ui.rect_size(node.bounds)[0]);
-                    var sizey = @floatToInt(u32, ui.rect_size(node.bounds)[1]);
+                    const rect_size = ui.rect_size(node.bounds);
+                    // Make sure we are at least the minimum size to prevent crashing
+                    var sizex = @intCast(u32, if (rect_size[0] < node.min_size[0])
+                        node.min_size[0]
+                    else
+                        rect_size[0]);
+                    var sizey = @intCast(u32, if (rect_size[1] < node.min_size[1])
+                        node.min_size[1]
+                    else
+                        rect_size[1]);
 
                     // Clear background
                     w4.DRAW_COLORS.* = 0x01;
