@@ -64,6 +64,24 @@ const App = struct {
         _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
             .label = "thing",
         } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "\x80",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "\x81",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "\x84",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "\x85",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "\x86",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "\x87",
+        } } });
 
         _ = try this.ui.insert(anchor, .{
             .has_background = true,

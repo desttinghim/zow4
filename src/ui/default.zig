@@ -91,7 +91,7 @@ pub const DefaultUI = union(enum) {
             },
             .Button => |btn| {
                 const label_size = text.text_size(btn.label);
-                const padding = 5; // 3 pixels left, 2 pixels right
+                const padding = 6; // 3 pixels left, 2 pixels right
                 return .{
                     label_size[0] + padding, label_size[1] + padding,
                 };
