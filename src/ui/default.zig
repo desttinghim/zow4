@@ -38,7 +38,7 @@ const Button = struct {
                     new_button.state = .Open;
                 } else if (!node.pointer_pressed) {
                     new_button.state = .Clicked;
-                    new_button.clicked = 15;
+                    new_button.clicked = 5;
                 } else {
                     new_button.state = .Pressed;
                 }
@@ -47,7 +47,7 @@ const Button = struct {
                 if (new_button.clicked > 0) {
                     new_button.state = .Clicked;
                 } else if (node.pointer_pressed) {
-                    new_button.clicked = 15;
+                    new_button.clicked = 5;
                 } else if (!node.pointer_over) {
                     new_button.state = .Open;
                 } else {

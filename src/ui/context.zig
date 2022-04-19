@@ -88,8 +88,8 @@ pub const Layout = union(enum) {
     // Stack elements horizontally
     // HList,
     // Stack elements vertically
-    // VList,
-    // Takes a slice of floats specifying the relative size of each column
+    VList: struct { top: i32 = 0 },
+    // Takes a slice of ints specifying the relative size of each column
     // Grid: []const f32,
 };
 
@@ -171,7 +171,8 @@ pub fn UIContext(comptime T: type) type {
             if (parent_opt) |parent_handle| {
                 const parent_o = this.get_index_by_handle(parent_handle);
                 if (parent_o) |parent| {
-                    index = parent + 1;
+                    const p = this.nodes.items[parent];
+                    index = parent + p.children + 1;
                     try this.nodes.insert(index, node);
                     this.nodes.items[index].handle = handle;
 
@@ -250,14 +251,13 @@ pub fn UIContext(comptime T: type) type {
             var queue = std.PriorityQueue(NodeDepth, void, order_node_depth).init(this.alloc, {});
             defer queue.deinit();
 
+            // Run the root layout function
             {
                 var childIter = this.get_root_iter();
-                // const pos = top_left(screen);
                 // Layout top level
-                while (childIter.next()) |childi| {
-                    // const child = this.nodes.items[childi];
-                    // this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], screen[2], screen[3] };
-                    this.run_layout(this.root_layout, screen, childi);
+                var child_count: usize = 0;
+                while (childIter.next()) |childi| : (child_count += 1) {
+                    _ = this.run_layout(this.root_layout, screen, childi, child_count);
                     try queue.add(NodeDepth{ .node = childi, .depth = 0 });
                 }
             }
@@ -266,24 +266,31 @@ pub fn UIContext(comptime T: type) type {
                 const i = node_depth.node;
                 const depth = node_depth.depth;
                 const node = this.nodes.items[i];
+                if (node.layout == .VList) {
+                    this.nodes.items[i].layout.VList.top = 0;
+                }
                 var childIter = this.get_child_iter(i);
-                while (childIter.next()) |childi| {
+                var child_count: usize = 0;
+                while (childIter.next()) |childi| : (child_count += 1) {
+                    this.nodes.items[i].layout = this.run_layout(this.nodes.items[i].layout, node.bounds, childi, child_count);
                     try queue.add(NodeDepth{ .node = childi, .depth = depth + 1 });
-                    this.run_layout(node.layout, node.bounds, childi);
                 }
             }
         }
 
-        fn run_layout(this: *@This(), which_layout: Layout, bounds: Rect, childi: usize) void {
-            const child = this.nodes.items[childi];
+        /// Runs the layout function and returns the new state of the layout component, if applicable
+        fn run_layout(this: *@This(), which_layout: Layout, bounds: Rect, child_index: usize, _: usize) Layout {
+            const child = this.nodes.items[child_index];
             switch (which_layout) {
                 .Fill => {
-                    this.nodes.items[childi].bounds = bounds;
+                    this.nodes.items[child_index].bounds = bounds;
+                    return .Fill;
                 },
                 .Relative => {
                     const pos = top_left(bounds);
                     // Layout top level
-                    this.nodes.items[childi].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
+                    this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
+                    return .Relative;
                 },
                 .Anchor => |anchor_data| {
                     const MAX = vec_double(.{ 100, 100 });
@@ -293,7 +300,14 @@ pub fn UIContext(comptime T: type) type {
                         top_left(bounds),
                     );
                     const margin = anchor + anchor_data.margin;
-                    this.nodes.items[childi].bounds = margin;
+                    this.nodes.items[child_index].bounds = margin;
+                    return .{ .Anchor = anchor_data };
+                },
+                .VList => |vlist_data| {
+                    const _left = bounds[0];
+                    const _top = bounds[1] + vlist_data.top;
+                    this.nodes.items[child_index].bounds = Rect{_left, _top, _left + child.min_size[0], _top + child.min_size[1]};
+                    return .{ .VList = .{.top = _top + child.min_size[1] } };
                 },
             }
         }
@@ -357,10 +371,9 @@ pub fn UIContext(comptime T: type) type {
             child_component: usize,
             pub fn next(this: *@This()) ?usize {
                 const index = this.index;
-                if (this.index <= 0 or this.index > this.nodes.len) return null;
-                while (this.index > 0) : (this.index -= 1) {
+                while (true) : (this.index -|= 1) {
                     const node = this.nodes[this.index];
-                    if (this.index != index and this.index + node.children >= this.child_component) {
+                    if (index != this.index and this.index + node.children >= this.child_component) {
                         // Never return with the same index as we started with
                         return this.index;
                     }

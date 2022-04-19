@@ -53,8 +53,16 @@ const App = struct {
             },
         } });
 
-        _ = try this.ui.insert(relative, .{ .data = .{ .Button = .{
+        const vlist = try this.ui.insert(relative, .{ .layout = .{ .VList = .{} } });
+
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
             .label = "uicontext",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "blah",
+        } } });
+        _ = try this.ui.insert(vlist, .{ .data = .{ .Button = .{
+            .label = "thing",
         } } });
 
         _ = try this.ui.insert(anchor, .{
