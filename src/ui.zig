@@ -10,6 +10,7 @@ const v = geom.Vec;
 pub const layout = @import("ui/layout.zig");
 pub const style = @import("ui/style.zig");
 pub const Element = elmnt.Element;
+pub const context  = @import("ui/context.zig");
 
 const Blit = draw.Blit;
 const BlitFlags = draw.BlitFlags;

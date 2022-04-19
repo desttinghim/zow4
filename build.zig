@@ -75,6 +75,10 @@ pub fn build(b: *std.build.Builder) void {
     const bezier = try addWasm4Cart(b, "bezier", "examples/bezier.zig");
     bezier.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-bezier", bezier);
+
+    const uicontext = try addWasm4Cart(b, "uicontext", "examples/uicontext.zig");
+    uicontext.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-uicontext", uicontext);
 }
 
 fn tests(b: *std.build.Builder, mode: std.builtin.Mode) !void {
