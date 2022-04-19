@@ -38,20 +38,22 @@ const Button = struct {
                     new_button.state = .Open;
                 } else if (!node.pointer_pressed) {
                     new_button.state = .Clicked;
+                    new_button.clicked = 15;
                 } else {
                     new_button.state = .Pressed;
                 }
             },
             .Clicked => {
-                if (!node.pointer_over) {
+                if (new_button.clicked > 0) {
+                    new_button.state = .Clicked;
+                } else if (node.pointer_pressed) {
+                    new_button.clicked = 15;
+                } else if (!node.pointer_over) {
                     new_button.state = .Open;
                 } else {
                     new_button.state = .Hover;
                 }
             },
-        }
-        if (data.state == .Clicked or (new_button.clicked > 0 and node.pointer_over and node.pointer_pressed)) {
-            new_button.clicked = 15;
         }
         var new_node = node;
         new_node.data = .{ .Button = new_button };
@@ -89,7 +91,7 @@ pub const DefaultUI = union(enum) {
             },
             .Button => |btn| {
                 const label_size = text.text_size(btn.label);
-                const padding = 4; // 2 pixels on each side
+                const padding = 5; // 3 pixels left, 2 pixels right
                 return .{
                     label_size[0] + padding, label_size[1] + padding,
                 };
@@ -139,38 +141,34 @@ pub const DefaultUI = union(enum) {
                     w4.DRAW_COLORS.* = 0x01;
                     w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
                     var dark = false;
-                    if (btn.clicked > 0) {
-                        w4.DRAW_COLORS.* = 0x44;
-                        w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
-                        dark = true;
-                    } else {
-                        switch (btn.state) {
-                            .Open, .Hover => {
-                                w4.DRAW_COLORS.* = 0x04;
-                                // Render "Shadow"
-                                w4.hline(left + 2, bottom - 1, sizex - 2);
-                                w4.vline(right - 1, top + 2, sizey - 2);
-                                // Render "Side"
-                                w4.hline(left + 1, bottom - 2, sizex - 2);
-                                w4.vline(right - 2, top + 1, sizey - 2);
-                                if (btn.state == .Hover) {
-                                    w4.DRAW_COLORS.* = 0x41;
-                                    w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
-                                }
-                            },
-                            .Pressed => {
-                                w4.DRAW_COLORS.* = 0x44;
-                                w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
-                            },
-                            .Clicked => {},
-                        }
+                    switch (btn.state) {
+                        .Open, .Hover => {
+                            w4.DRAW_COLORS.* = 0x04;
+                            // Render "Shadow"
+                            w4.hline(left + 2, bottom - 1, sizex - 2);
+                            w4.vline(right - 1, top + 2, sizey - 2);
+                            // Render "Side"
+                            w4.hline(left + 1, bottom - 2, sizex - 2);
+                            w4.vline(right - 2, top + 1, sizey - 2);
+                            if (btn.state == .Hover) {
+                                w4.DRAW_COLORS.* = 0x41;
+                                w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
+                            }
+                        },
+                        .Pressed => {
+                            w4.DRAW_COLORS.* = 0x44;
+                            w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
+                            dark = true;
+                        },
+                        .Clicked => {
+                            w4.DRAW_COLORS.* = 0x44;
+                            w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
+                            dark = true;
+                        },
                     }
-                    if (dark) {
-                        w4.DRAW_COLORS.* = 0x01;
-                    } else {
-                        w4.DRAW_COLORS.* = 0x04;
-                    }
-                    w4.textUtf8(btn.label.ptr, btn.label.len, left + 2, top + 2);
+                    w4.DRAW_COLORS.* = if (dark) 0x01 else 0x04;
+                    const offset: i32 = if (dark) 4 else 3;
+                    w4.textUtf8(btn.label.ptr, btn.label.len, left + offset, top + offset);
                 },
             }
         }
