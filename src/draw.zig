@@ -1,7 +1,6 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
-const v = geom.vec;
 const Text = @import("text.zig");
 
 // https://rosettacode.org/wiki/Bitmap/B%C3%A9zier_curves/Quadratic#C
@@ -158,7 +157,7 @@ pub const Blit = struct {
     pub fn get_size(this: @This()) geom.Vec2 {
         return switch (this.rect) {
             .full => geom.Vec2{ this.bmp.width, this.bmp.height },
-            .aabb => |aabb| geom.Vec2{ aabb.size[v.x], aabb.size[v.y] },
+            .aabb => |aabb| geom.aabb.size(aabb),
         };
     }
 
@@ -177,18 +176,18 @@ pub const Bitmap = struct {
     height: i32,
 
     pub fn blit(this: @This(), pos: geom.Vec2, flags: BlitFlags) void {
-        w4.blit(this.data, pos[v.x], pos[v.y], this.width, this.height, @bitCast(u32, flags));
+        w4.blit(this.data, pos[geom.vec.x], pos[geom.vec.y], this.width, this.height, @bitCast(u32, flags));
     }
 
     pub fn blit_sub(this: @This(), pos: geom.Vec2, rect: geom.AABB, flags: BlitFlags) void {
         w4.blitSub(
             this.data,
-            pos[v.x],
-            pos[v.y],
-            rect.size[v.x],
-            rect.size[v.y],
-            @intCast(u32, rect.pos[v.x]),
-            @intCast(u32, rect.pos[v.y]),
+            pos[geom.vec.x],
+            pos[geom.vec.y],
+            geom.aabb.width(rect),
+            geom.aabb.height(rect),
+            @intCast(u32, geom.aabb.x(rect)),
+            @intCast(u32, geom.aabb.y(rect)),
             this.width,
             @bitCast(u32, flags),
         );

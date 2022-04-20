@@ -1,15 +1,34 @@
 const std = @import("std");
 
-/// Represents a rectangle as .{ left, top, right, bottom }
-pub const Rect = @Vector(4, i32);
 /// Represents a 2D floating point Vector as .{ x, y }
-pub const Vec2f = std.meta.Vector(2, f32);
+pub const Vec2f = @Vector(2, f32);
 /// Represents a 2D signed Vector as .{ x, y }
-pub const Vec2 = std.meta.Vector(2, i32);
+pub const Vec2 = @Vector(2, i32);
 
+/// Contains convenience functions for working with vectors.
 pub const vec = struct {
+    /// Vector index representing x
     pub const x = 0;
+    /// Vector index representing y
     pub const y = 1;
+
+    /// 2D up vector (i32)
+    pub const up = Vec2{ 0, -1 };
+    /// 2D down vector (i32)
+    pub const down = Vec2{ 0, 1 };
+    /// 2D left vector (i32)
+    pub const left = Vec2{ -1, 0 };
+    /// 2D right vector (i32)
+    pub const right = Vec2{ 1, 0 };
+
+    /// 2D up vector
+    pub const upf = Vec2f{ 0, -1 };
+    /// 2D down vector
+    pub const downf = Vec2f{ 0, 1 };
+    /// 2D left vector
+    pub const leftf = Vec2f{ -1, 0 };
+    /// 2D right vector
+    pub const rightf = Vec2f{ 1, 0 };
 
     /////////////////////////////////////////
     // i32 integer backed vector functions //
@@ -90,7 +109,17 @@ pub const vec = struct {
     }
 };
 
+/// Represents a rectangle as .{ left, top, right, bottom } with integers
+pub const Rect = @Vector(4, i32);
+/// Represents a rectangle as .{ left, top, right, bottom } with floats
+pub const Rectf = @Vector(4, f32);
+
+/// Contains convenience functions for working with Rects
 pub const rect = struct {
+    ///////////////////////////////////////
+    // i32 integer backed rect functions //
+    ///////////////////////////////////////
+
     pub fn top(rectangle: Rect) i32 {
         return rectangle[1];
     }
@@ -120,103 +149,141 @@ pub const rect = struct {
     }
 
     pub fn contains(rectangle: Rect, vector: Vec2) bool {
-        return @reduce(.And, top_left(rectangle) < vector) and @reduce(.And, bottom_right(rectangle) > vector);
+        return @reduce(.And, top_left(rectangle) < vector) and
+            @reduce(.And, bottom_right(rectangle) >= vector);
+    }
+
+    pub fn overlaps(rect1: Rect, rect2: Rect) bool {
+        return @reduce(
+            .And,
+            @select(
+                bool,
+                rect1 > rect2,
+                rect1 <= rect2,
+                .{ true, true, false, false },
+            ),
+        );
     }
 
     pub fn shift(rectangle: Rect, vector: Vec2) Rect {
         return rectangle + vec.double(vector);
     }
-};
 
-pub const Dir = struct {
-    pub const up = Vec2{ 0, -1 };
-    pub const down = Vec2{ 0, 1 };
-    pub const left = Vec2{ -1, 0 };
-    pub const right = Vec2{ 1, 0 };
-};
+    /////////////////////////////////////
+    // f32 float backed rect functions //
+    /////////////////////////////////////
 
-pub const DirF = struct {
-    pub const up = Vec2f{ 0, -1 };
-    pub const down = Vec2f{ 0, 1 };
-    pub const left = Vec2f{ -1, 0 };
-    pub const right = Vec2f{ 1, 0 };
-};
-
-pub const AABB = struct {
-    pos: Vec2,
-    size: Vec2,
-
-    pub fn top(this: @This()) i32 {
-        return this.pos[vec.y];
-    }
-    pub fn left(this: @This()) i32 {
-        return this.pos[vec.x];
-    }
-    pub fn top_left(this: @This()) Vec2 {
-        return this.pos;
-    }
-    pub fn right(this: @This()) i32 {
-        return this.pos[vec.x] + this.size[vec.x];
-    }
-    pub fn bottom(this: @This()) i32 {
-        return this.pos[vec.y] + this.size[vec.y];
-    }
-    pub fn bottom_right(this: @This()) Vec2 {
-        return this.pos + this.size;
+    pub fn topf(rectangle: Rectf) f32 {
+        return rectangle[1];
     }
 
-    pub fn init(x: i32, y: i32, w: i32, h: i32) @This() {
-        return @This(){
-            .pos = Vec2{ x, y },
-            .size = Vec2{ w, h },
-        };
+    pub fn leftf(rectangle: Rectf) f32 {
+        return rectangle[0];
     }
 
-    pub fn initv(topleft: Vec2, size: Vec2) @This() {
-        return @This(){
-            .pos = topleft,
-            .size = size,
-        };
+    pub fn top_leftf(rectangle: Rectf) Vec2f {
+        return .{ rectangle[0], rectangle[1] };
     }
 
-    pub fn addv(this: @This(), vec2: Vec2) @This() {
-        return @This(){ .pos = this.pos + vec2, .size = this.size };
+    pub fn rightf(rectangle: Rectf) f32 {
+        return rectangle[2];
     }
 
-    pub fn contains(this: @This(), vector: Vec2) bool {
-        const tl = this.top_left();
-        const br = this.bottom_right();
-        return tl[vec.x] < vector[vec.x] and br[vec.x] > vector[vec.x] and
-            tl[vec.y] < vector[vec.y] and br[vec.y] > vector[vec.y];
+    pub fn bottomf(rectangle: Rectf) f32 {
+        return rectangle[3];
     }
 
-    pub fn overlaps(a: @This(), b: @This()) bool {
-        return a.pos[0] < b.pos[0] + b.size[0] and
-            a.pos[0] + a.size[0] > b.pos[0] and
-            a.pos[1] < b.pos[1] + b.size[1] and
-            a.pos[1] + a.size[1] > b.pos[1];
+    pub fn bottom_rightf(rectangle: Rectf) Vec2f {
+        return .{ rectangle[2], rectangle[3] };
+    }
+
+    pub fn sizef(rectangle: Rectf) Vec2f {
+        return .{ rectangle[2] - rectangle[0], rectangle[3] - rectangle[1] };
+    }
+
+    pub fn containsf(rectangle: Rectf, vector: Vec2f) bool {
+        return @reduce(.And, top_left(rectangle) < vector) and @reduce(.And, bottom_right(rectangle) > vector);
+    }
+
+    pub fn shiftf(rectangle: Rectf, vector: Vec2f) Rectf {
+        return rectangle + vec.double(vector);
     }
 };
 
-pub const AABBf = struct {
-    pos: Vec2f,
-    size: Vec2f,
+/// Represents a rectangle as .{ x, y, width, height } with integers.
+/// This type is similar to Rect, but the key difference is is in how the last 2
+/// elements are represented. For example, AABBs would be a better format for
+/// storing information about a character's collision box, but Rects are better
+/// for bounds checking.
+pub const AABB = @Vector(4, i32);
+/// Represents a rectangle as .{ x, y, width, height } with floats
+pub const AABBf = @Vector(4, f32);
 
-    pub fn init(x: f32, y: f32, w: f32, h: f32) @This() {
-        return @This(){
-            .pos = Vec2{ x, y },
-            .size = Vec2{ w, h },
-        };
+/// Contains convience functions for working with AABBs
+pub const aabb = struct {
+    /// Converts the AABB into a Rect
+    pub fn as_rect(box: AABB) Rect {
+        return Rect{ box[0], box[1], box[0] + box[2], box[0] + box[3] };
     }
 
-    pub fn addv(this: @This(), vec2f: Vec2f) @This() {
-        return @This(){ .pos = this.pos + vec2f, .size = this.size };
+    pub fn pos(box: AABB) Vec2 {
+        return Vec2{ box[0], box[1] };
     }
 
-    pub fn overlaps(a: @This(), b: @This()) bool {
-        return a.pos[0] < b.pos[0] + b.size[0] and
-            a.pos[0] + a.size[0] > b.pos[0] and
-            a.pos[1] < b.pos[1] + b.size[1] and
-            a.pos[1] + a.size[1] > b.pos[1];
+    pub fn size(box: AABB) Vec2 {
+        return Vec2{ box[2], box[3] };
+    }
+
+    pub fn x(box: AABB) i32 {
+        return box[0];
+    }
+
+    pub fn y(box: AABB) i32 {
+        return box[1];
+    }
+
+    pub fn width(box: AABB) i32 {
+        return box[2];
+    }
+
+    pub fn height(box: AABB) i32 {
+        return box[3];
+    }
+
+    pub fn initv(posv: Vec2, sizev: Vec2) AABB {
+        return AABB{ posv[0], posv[1], sizev[0], sizev[1] };
+    }
+
+    pub fn addv(box: AABB, vec2: Vec2) AABB {
+        return initv(pos(box) + vec2, size(box));
+    }
+
+    pub fn subv(box: AABB, vec2: Vec2) AABB {
+        return initv(pos(box) - vec2, size(box));
+    }
+
+    /// Converts the AABBf into a Rect
+    pub fn as_rectf(box: AABBf) Rectf {
+        return Rectf{ box[0], box[1], box[0] + box[2], box[0] + box[3] };
+    }
+
+    pub fn posf(box: AABBf) Vec2f {
+        return Vec2f{ box[0], box[1] };
+    }
+
+    pub fn sizef(box: AABBf) Vec2f {
+        return Vec2f{ box[2], box[3] };
+    }
+
+    pub fn initvf(posv: Vec2f, sizev: Vec2f) AABBf {
+        return AABBf{ posv[0], posv[1], sizev[0], sizev[1] };
+    }
+
+    pub fn addvf(box: AABBf, vec2: Vec2f) AABBf {
+        return initv(pos(box) + vec2, size(box));
+    }
+
+    pub fn subvf(box: AABBf, vec2: Vec2f) AABBf {
+        return initv(pos(box) - vec2, size(box));
     }
 };
