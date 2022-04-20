@@ -84,6 +84,10 @@ pub fn length(a: Vec2) i32 {
     return @floatToInt(i32, @intToFloat(f32, lengthSquared(a)));
 }
 
+pub fn distSquared(a: Vec2, b: Vec2) i32 {
+    return lengthSquared(a - b);
+}
+
 pub fn dist(a: Vec2, b: Vec2) i32 {
     return length(a - b);
 }

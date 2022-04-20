@@ -374,14 +374,14 @@ pub fn Context(comptime T: type) type {
             {
                 // Collect info about state
                 const pointer_diff = inputs.pointer.pos - this.inputs_last.pointer.pos;
-                const pointer_move= @reduce(.Or, pointer_diff != Vec{ 0, 0 });
-                const pointer_press= !this.inputs_last.pointer.left and inputs.pointer.left;
-                const pointer_release= this.inputs_last.pointer.left and !inputs.pointer.left;
+                const pointer_move = @reduce(.Or, pointer_diff != Vec{ 0, 0 });
+                const pointer_press = !this.inputs_last.pointer.left and inputs.pointer.left;
+                const pointer_release = this.inputs_last.pointer.left and !inputs.pointer.left;
                 if (pointer_press) {
                     this.pointer_start_press = inputs.pointer.pos;
                 }
-                const drag_threshold = 2;
-                const pointer_drag = inputs.pointer.left and g.dist(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
+                const drag_threshold = 10 * 10;
+                const pointer_drag = inputs.pointer.left and pointer_move and g.distSquared(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
 
                 // Iterate backwards until we find an element that contains the pointer, then dispatch
                 // the event. Dispatching will bubble the event to the topmost element.
