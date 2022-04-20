@@ -20,7 +20,7 @@ pub const ui = struct {
 
 const std = @import("std");
 
-pub fn update(ui_ctx: *ui.Context) void {
+pub fn update(ui_ctx: *ui.default.Context) !void {
     ui_ctx.update(.{
         .pointer = .{
             .left = input.mouse(.left),
@@ -37,7 +37,7 @@ pub fn update(ui_ctx: *ui.Context) void {
             .reject = input.btn(.one, .z),
         },
     });
-    ui_ctx.layout(.{ 0, 0, 160, 160 });
+    try ui_ctx.layout(.{ 0, 0, 160, 160 });
     ui_ctx.paint();
     input.update();
 }

@@ -1,182 +1,217 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
+
 const geom = zow4.geometry;
 const color = zow4.draw.color;
-
-const Input = zow4.input;
+const input = zow4.input;
 const ui = zow4.ui;
-const Sprite = zow4.ui.Sprite;
-const Panel = zow4.ui.Panel;
-const Stage = zow4.ui.Stage;
+const Context = zow4.ui.default.Context;
+const Node = Context.Node;
 
-const bubbles_bmp = zow4.draw.load_bitmap(@embedFile("bubbles.bmp")) catch |e| @compileLog("Hey", e);
+const bubbles_bmp = zow4.draw.load_bitmap(@embedFile("bubbles.bmp")) catch |e| @compileLog("Could not load bitmap", e);
 
 var fba: std.heap.FixedBufferAllocator = undefined;
 var alloc: std.mem.Allocator = undefined;
-var bubbles: *ui.Element = undefined;
-var stage: *Stage = undefined;
-var float: *ui.Element = undefined;
 
-var grabbed: ?*ui.Element = null;
+var bubbles: zow4.draw.Blit = undefined;
+var stage: usize = undefined;
+var wm_handle: usize = undefined;
+var float: usize = undefined;
+
+const Grab = struct { handle: usize, diff: geom.Vec2 };
+var grabbed: ?Grab = null;
 var grab_point: ?geom.Vec2 = null;
 
-fn float_release(_: *ui.Element, _: ui.EventData) bool {
+////////////////////
+// Event Handlers //
+////////////////////
+
+fn float_release(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
     grabbed = null;
     grab_point = null;
-    return false;
+    return null;
 }
 
-fn float_pressed(el: *ui.Element, event: ui.EventData) bool {
-    const pos = event.MousePressed;
-    const diff = pos - el.size.pos;
-    grab_point = diff;
-    grabbed = el;
-    el.move_to_front();
-    return false;
+fn float_pressed(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Node {
+    const pos = event.pointer.pos;
+    const diff = pos - ui.top_left(node.bounds);
+    grabbed = .{
+        .handle = node.handle,
+        .diff = diff,
+    };
+    app.ctx.bring_to_front(node.handle);
+    return null;
 }
 
-fn float_drag(el: *ui.Element, _: ui.EventData) bool {
-    if (grabbed) |grab| {
-        if (grab == el) {
-            // Reset the mouse_state
-            grab.mouse_state = .Hover;
-        }
-    }
-    return false;
+// fn float_drag(node: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
+//     if (grabbed) |grab| {
+//         var new_node = node;
+//         if (grab.handle == node.handle) {
+//             // Reset the pointer state
+//             new_node.pointer_state = .Open;
+//             return new_node;
+//         }
+//     }
+//     return null;
+// }
+
+// fn float_delete(el: *ui.Element, _: ui.EventData) bool {
+//     el.remove();
+//     return false;
+// }
+
+fn float_hide(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
+    w4.trace("show");
+    _ = app.ctx.hide_node(float);
+    return null;
 }
 
-fn float_delete(el: *ui.Element, _: ui.EventData) bool {
-    el.remove();
-    return false;
+fn float_show(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
+    w4.trace("hide");
+    _ = app.ctx.show_node(float);
+    return null;
 }
 
-fn float_show(_: *ui.Element, _: ui.EventData) bool {
-    float.hidden = false;
-    return false;
+fn float_toggle(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
+    w4.trace("toggle");
+    _ = app.ctx.toggle_hidden(float);
+    return null;
 }
 
-fn float_hide(_: *ui.Element, _: ui.EventData) bool {
-    float.hidden = true;
-    return false;
-}
-
-fn float_toggle(_: *ui.Element, _: ui.EventData) bool {
-    float.hidden = !float.hidden;
-    return false;
-}
+var app: App = undefined;
 
 export fn start() void {
-    fba = zow4.heap.init();
-    alloc = fba.allocator();
-
-    stage = Stage.init(alloc) catch @panic("creating stage");
-
-    float = stage.float(geom.AABB.init(32, 32, 120, 120)) catch @panic("creating anchorEl");
-    float.listen(.MousePressed, float_pressed);
-    float.listen(.MouseReleased, float_release);
-    float.listen(.MouseClicked, float_hide);
-    float.listen(.MouseMoved, float_drag);
-    stage.root.appendChild(float);
-
-    var menubar = stage.float(geom.AABB.init(0, 0, 160, 16)) catch @panic("creating menubar");
-    stage.root.appendChild(menubar);
-
-    var hlist = stage.hdiv() catch @panic("hlist");
-    menubar.appendChild(hlist);
-
-    var btn1 = stage.button("Show") catch @panic("creating button");
-    btn1.listen(.MouseClicked, float_show);
-    hlist.appendChild(btn1);
-
-    var btn2 = stage.button("Hide") catch @panic("creating button");
-    btn2.listen(.MouseClicked, float_hide);
-    hlist.appendChild(btn2);
-
-    var btn3 = stage.button("Toggle") catch @panic("creating button");
-    btn3.listen(.MouseClicked, float_toggle);
-    hlist.appendChild(btn3);
-
-    var panel = stage.panel() catch @panic("creating element");
-    float.appendChild(panel);
-
-    var vdiv = stage.vdiv() catch @panic("creating vdiv");
-    panel.appendChild(vdiv);
-
-    {
-        var center = stage.center() catch @panic("center");
-        var label = stage.label("Click To Hide") catch @panic("creating label");
-        center.appendChild(label);
-        vdiv.appendChild(center);
-    }
-
-    {
-        const elsize = std.fmt.allocPrint(alloc, "{}", .{@sizeOf(ui.Element)}) catch @panic("alloc");
-        var center = stage.center() catch @panic("center");
-        var label = stage.label(elsize) catch @panic("creating label");
-        center.appendChild(label);
-        vdiv.appendChild(center);
-    }
-
-    {
-        var center = stage.center() catch @panic("center");
-        vdiv.appendChild(center);
-        bubbles = stage.sprite(.{ .style = 0x0004, .bmp = &bubbles_bmp }) catch @panic("sprite");
-        center.appendChild(bubbles);
-    }
-    {
-        var center = stage.center() catch @panic("center");
-        var label = stage.label("Drag To Move") catch @panic("creating label");
-        center.appendChild(label);
-        vdiv.appendChild(center);
-    }
-
-    var float2 = stage.float(geom.AABB.init(20, 120, 120, 120)) catch @panic("creating anchorEl");
-    float2.listen(.MousePressed, float_pressed);
-    float2.listen(.MouseReleased, float_release);
-    float2.listen(.MouseMoved, float_drag);
-    stage.root.appendChild(float2);
-
-    var panel2 = stage.panel() catch @panic("creating element");
-    float2.appendChild(panel2);
-
-    var vlist = stage.vlist() catch @panic("creating vlist");
-    panel2.appendChild(vlist);
-
-    {
-        var label = stage.label("Click To Hide") catch @panic("creating label");
-        vlist.appendChild(label);
-    }
-
-    {
-        const elsize = std.fmt.allocPrint(alloc, "{}", .{@sizeOf(ui.Element)}) catch @panic("alloc");
-        var label = stage.label(elsize) catch @panic("creating label");
-        vlist.appendChild(label);
-    }
-
-    {
-        var bubbles2 = stage.sprite(.{ .style = 0x0004, .bmp = &bubbles_bmp }) catch @panic("sprite");
-        vlist.appendChild(bubbles2);
-    }
-    {
-        var label = stage.label("Drag To Move") catch @panic("creating label");
-        vlist.appendChild(label);
-    }
-    w4.trace("here init?");
+    app = App.start() catch |e| {
+        switch (e) {
+            error.OutOfMemory => {
+                w4.trace("Out of Memory!");
+            },
+        }
+        @panic("Encountered an error");
+    };
 }
 
 export fn update() void {
-    zow4.draw.cubic_bezier(.{0,0}, .{160,0}, .{0, 160}, .{160, 160});
-    zow4.draw.quadratic_bezier(.{0,0}, .{320,80}, .{0, 160});
-
-    stage.update();
-    stage.render();
-
-    if (grabbed) |el| {
-        if (grab_point) |point| {
-            el.size.pos = Input.mousepos() - point;
+    app.update() catch |e| {
+        switch (e) {
+            error.OutOfMemory => {
+                w4.trace("Out of Memory!");
+            },
         }
+        @panic("Encountered an error");
+    };
+}
+
+fn log (text: []const u8) void {
+    w4.traceUtf8(text.ptr, text.len);
+}
+
+pub const App = struct {
+    ctx: Context = undefined,
+    fn start() !@This() {
+        fba = zow4.heap.init();
+        alloc = fba.allocator();
+
+        var ctx = ui.default.init(alloc);
+
+        wm_handle = try ctx.insert(null, Node.fill());
+
+        var menubar = try ctx.insert(null, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, 16 }));
+
+        var hdiv = try ctx.insert(menubar, Node.hdiv().hasBackground(true));
+
+        var btn1 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Show" }).capturePointer(true));
+        try ctx.listen(btn1, .PointerClick, float_show);
+
+        var btn2 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Hide" }).capturePointer(true));
+        try ctx.listen(btn2, .PointerClick, float_hide);
+
+        var btn3 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Toggle" }).capturePointer(true));
+        try ctx.listen(btn3, .PointerClick, float_toggle);
+
+        float = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }));
+        try ctx.listen(float, .PointerPress, float_pressed);
+        try ctx.listen(float, .PointerRelease, float_release);
+        // try ctx.listen(float, .PointerClick, float_hide);
+        // try ctx.listen(float, .PointerMove, float_drag);
+
+        var vdiv = try ctx.insert(float, Node.vdiv().hasBackground(true).capturePointer(true));
+        {
+            var center = try ctx.insert(vdiv, Node.center());
+            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
+        }
+
+        const elsize = try std.fmt.allocPrint(alloc, "{}", .{@sizeOf(Node)});
+        {
+            var center = try ctx.insert(vdiv, Node.center());
+            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = elsize }));
+        }
+
+        {
+            var center = try ctx.insert(vdiv, Node.center());
+            bubbles = zow4.draw.Blit{ .style = 0x0004, .bmp = &bubbles_bmp };
+            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Image = &bubbles }));
+        }
+
+        {
+            var center = try ctx.insert(vdiv, Node.center());
+            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
+        }
+
+        var float2 = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 20, 20, 140, 140 }));
+        try ctx.listen(float2, .PointerPress, float_pressed);
+        try ctx.listen(float2, .PointerRelease, float_release);
+        // try ctx.listen(float2, .PointerClick, float_hide);
+        // try ctx.listen(float2, .PointerMove, float_drag);
+
+        var vlist = try ctx.insert(float2, Node.vlist().hasBackground(true).capturePointer(true));
+        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
+        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = elsize }));
+        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Image = &bubbles }));
+        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
+
+        try ctx.layout(.{ 0, 0, 160, 160 });
+        ctx.print_debug(log);
+        return @This(){.ctx =  ctx};
     }
 
-    Input.update();
-}
+    fn update(this: *@This()) !void {
+        w4.DRAW_COLORS.* = 0x04;
+        zow4.draw.cubic_bezier(.{ 0, 0 }, .{ 160, 0 }, .{ 0, 160 }, .{ 160, 160 });
+        zow4.draw.quadratic_bezier(.{ 0, 0 }, .{ 320, 80 }, .{ 0, 160 });
+
+        if (grabbed) |grab| {
+            if (this.ctx.get_node(grab.handle)) |*node| {
+                const pos = input.mousepos() - grab.diff;
+                const size = ui.rect_size(node.bounds);
+                node.bounds = geom.Rect{ pos[0], pos[1], pos[0] + size[0], pos[1] + size[1] };
+                _ = this.ctx.set_node(node.*);
+            }
+        }
+        this.ctx.update(.{
+            .pointer = .{
+                .left = input.mouse(.left),
+                .right = input.mouse(.right),
+                .middle = input.mouse(.middle),
+                .pos = input.mousepos(),
+            },
+            .keys = .{
+                .up = input.btn(.one, .up),
+                .down = input.btn(.one, .down),
+                .left = input.btn(.one, .left),
+                .right = input.btn(.one, .right),
+                .accept = input.btn(.one, .x),
+                .reject = input.btn(.one, .z),
+            },
+        });
+        const modified = this.ctx.modified != null;
+        try this.ctx.layout(.{ 0, 0, 160, 160 });
+        if (modified and this.ctx.modified == null) {
+            w4.trace("");
+            this.ctx.print_debug(log);
+        }
+        this.ctx.paint();
+        input.update();
+    }
+};

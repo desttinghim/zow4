@@ -121,6 +121,7 @@ const externWasm4 = struct {
 
     /// Prints a message to the debug console.
     pub extern fn trace(x: [*]const u8) void;
+    pub extern fn traceUtf8(x: [*]const u8, len: usize) void;
 
     /// Use with caution, as there's no compile-time type checking.
     ///
@@ -172,5 +173,6 @@ const stubWasm4 = struct {
         return 0;
     }
     pub fn trace(_: [*]const u8) void {}
+    pub fn traceUtf8(_: [*]const u8, _: usize) void {}
     // pub fn tracef(_: [*:0]const u8, ...) void {}
 };

@@ -1,83 +1,99 @@
 const std = @import("std");
 const zow4 = @import("zow4");
 
-const Input = zow4.input;
+const input = zow4.input;
 const ui = zow4.ui;
+const Context = ui.default.Context;
+const Node = Context.Node;
 
 var fba: std.heap.FixedBufferAllocator = undefined;
 var alloc: std.mem.Allocator = undefined;
-var stage: *ui.Stage = undefined;
+var ctx: Context = undefined;
+
 var counter: isize = 0;
-var counter_label: *ui.Label = undefined;
+var counter_handle: usize = undefined;
 var counter_text: []u8 = undefined;
 
-fn increment(_: *ui.Element, _: ui.EventData) bool {
-    counter +|= 1;
-    alloc.free(counter_text);
-    counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
-    counter_label.string = counter_text;
-    return false;
+fn update_label() void {
+    if (ctx.get_node(counter_handle)) |node| {
+        var new_node = node;
+        alloc.free(counter_text);
+        counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
+        new_node.data.?.Label = counter_text;
+        _ = ctx.set_node(new_node);
+    }
 }
 
-fn decrement(_: *ui.Element, _: ui.EventData) bool {
+fn increment(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
+    counter +|= 1;
+    update_label();
+    return null;
+}
+
+fn decrement(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
     counter -|= 1;
-    alloc.free(counter_text);
-    counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
-    counter_label.string = counter_text;
-    return false;
+    update_label();
+    return null;
 }
 
 export fn start() void {
+    init() catch @panic("eh");
+}
+
+fn init() !void {
     fba = zow4.heap.init();
     alloc = fba.allocator();
 
-    stage = ui.Stage.init(alloc) catch @panic("creating stage");
+    ctx = ui.default.init(alloc);
 
-    var vdiv = stage.vdiv() catch @panic("vdiv");
-    stage.root.appendChild(vdiv);
+    var vdiv = try ctx.insert(null, Node.vdiv());
 
-    {
-        var spacer = stage.panel() catch @panic("spacer");
-        spacer.style = .{ .static = .background };
-        vdiv.appendChild(spacer);
-    }
-
-    var hdiv = stage.hdiv() catch @panic("hdiv");
-    vdiv.appendChild(hdiv);
+    _ = try ctx.insert(vdiv, .{});
 
     {
-        var spacer = stage.panel() catch @panic("spacer");
-        spacer.style = .{ .static = .background };
-        vdiv.appendChild(spacer);
+        const hdiv = try ctx.insert(vdiv, Node.hdiv());
+
+        const center_dec = try ctx.insert(hdiv, Node.center());
+        const btn_decrement = try ctx.insert(center_dec, Node.relative().dataValue(.{ .Button = "-" }).capturePointer(true));
+        try ctx.listen(btn_decrement, .PointerClick, decrement);
+
+        const center_lbl = try ctx.insert(hdiv, Node.center());
+        counter = 0;
+        counter_text = try std.fmt.allocPrint(alloc, "{}", .{counter});
+        counter_handle = try ctx.insert(center_lbl, Node.relative().dataValue(.{ .Label = counter_text }));
+
+        const center_inc = try ctx.insert(hdiv, Node.center());
+        const btn_increment = try ctx.insert(center_inc, Node.relative().dataValue(.{ .Button = "+" }).capturePointer(true));
+        try ctx.listen(btn_increment, .PointerClick, increment);
     }
 
-    {
-        var btn1 = stage.button("-") catch @panic("creating button");
-        btn1.listen(.MouseClicked, decrement);
-        btn1.layoutFn = ui.layout.layout_padded;
-        hdiv.appendChild(btn1);
-    }
+    _ = try ctx.insert(vdiv, .{});
 
-    {
-        var center = stage.center() catch @panic("centering");
-        hdiv.appendChild(center);
-        counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
-        var label = stage.label(counter_text) catch @panic("creating label");
-        counter_label = @ptrCast(*ui.Label, @alignCast(@alignOf(ui.Label), label));
-        center.appendChild(label);
-    }
-
-    {
-        var btn2 = stage.button("+") catch @panic("creating button");
-        btn2.listen(.MouseClicked, increment);
-        btn2.layoutFn = ui.layout.layout_padded;
-        hdiv.appendChild(btn2);
-    }
+    try ctx.layout(.{ 0, 0, 160, 160 });
 }
 
 export fn update() void {
-    stage.update();
-    stage.render();
+    _update() catch @panic("update");
+}
 
-    Input.update();
+fn _update() !void {
+    ctx.update(.{
+        .pointer = .{
+            .left = input.mouse(.left),
+            .right = input.mouse(.right),
+            .middle = input.mouse(.middle),
+            .pos = input.mousepos(),
+        },
+        .keys = .{
+            .up = input.btn(.one, .up),
+            .down = input.btn(.one, .down),
+            .left = input.btn(.one, .left),
+            .right = input.btn(.one, .right),
+            .accept = input.btn(.one, .x),
+            .reject = input.btn(.one, .z),
+        },
+    });
+    try ctx.layout(.{ 0, 0, 160, 160 });
+    ctx.paint();
+    input.update();
 }

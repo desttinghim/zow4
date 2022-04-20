@@ -6,7 +6,10 @@ const geom = zow4.geometry;
 
 var app: App = undefined;
 
-// WASM4 exports
+///////////////////
+// WASM4 exports //
+///////////////////
+
 export fn start() void {
     app = App.init() catch |e| {
         switch (e) {
@@ -25,6 +28,10 @@ export fn update() void {
     };
 }
 
+////////////////////
+// Event Handlers //
+////////////////////
+
 fn drag_handler(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Node {
     if (node.handle != app.wm_handle) return null;
     const margin = node.layout.Anchor.margin;
@@ -42,6 +49,10 @@ fn toggle_window(_: ui.default.Node, _: ui.EventData) ?ui.default.Node {
     _ = app.ui.toggle_hidden(app.wm_handle);
     return null;
 }
+
+////////////////
+// App Struct //
+////////////////
 
 const ui = zow4.ui;
 const Node = ui.default.Node;
@@ -90,7 +101,7 @@ const App = struct {
 
         _ = try this.ui.insert(window, Node.relative().dataValue(.{ .Label = "uicontext" }));
 
-        this.ui.layout(.{ 0, 0, 160, 160 });
+        try this.ui.layout(.{ 0, 0, 160, 160 });
 
         return this;
     }
@@ -129,7 +140,7 @@ const App = struct {
                 }
             }
         }
-        this.ui.layout(.{ 0, 0, 160, 160 });
+        try this.ui.layout(.{ 0, 0, 160, 160 });
         this.ui.paint();
         input.update();
     }

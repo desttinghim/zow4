@@ -90,15 +90,17 @@ pub const Layout = union(enum) {
     /// Default layout. Children are positioned relative to the parent with no
     /// attempt made to prevent overlapping.
     Relative,
+    /// Keep elements centered
+    Center,
     /// Specify an anchor (between 0 and 1) and a margin (in screen space) for
     /// childrens bounding box
     Anchor: struct { anchor: Rect, margin: Rect },
     // Divide horizontal space equally
-    // HDiv,
+    HDiv,
     // Divide vertical space equally
-    // VDiv,
+    VDiv,
     // Stack elements horizontally
-    // HList,
+    HList: struct { left: i32 = 0 },
     // Stack elements vertically
     VList: struct { top: i32 = 0 },
     // Takes a slice of ints specifying the relative size of each column
@@ -109,10 +111,10 @@ pub const Layout = union(enum) {
 pub fn Context(comptime T: type) type {
     return struct {
         pointer_pos: Vec = Vec{ 0, 0 },
-        modified: bool,
+        modified: ?Modification,
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
-        root_layout: Layout = .Relative,
+        root_layout: Layout = .Fill,
         /// Array of all ui elements
         nodes: ArrayList(Node),
         listeners: ArrayList(Listener),
@@ -122,6 +124,12 @@ pub fn Context(comptime T: type) type {
         updateFn: UpdateFn,
         paintFn: PaintFn,
         sizeFn: SizeFn,
+
+        const Modification = union(enum) {
+            Element,
+            Init,
+            BringToFront: usize,
+        };
 
         pub const UpdateFn = fn (Node) Node;
         pub const PaintFn = fn (Node) void;
@@ -187,9 +195,33 @@ pub fn Context(comptime T: type) type {
                 };
             }
 
+            pub fn center() @This() {
+                return @This(){
+                    .layout = .Center,
+                };
+            }
+
             pub fn vlist() @This() {
                 return @This(){
-                    .layout = .{.VList = .{}},
+                    .layout = .{ .VList = .{} },
+                };
+            }
+
+            pub fn hlist() @This() {
+                return @This(){
+                    .layout = .{ .HList = .{} },
+                };
+            }
+
+            pub fn vdiv() @This() {
+                return @This(){
+                    .layout = .{ .VDiv = .{} },
+                };
+            }
+
+            pub fn hdiv() @This() {
+                return @This(){
+                    .layout = .{ .HDiv = .{} },
                 };
             }
 
@@ -221,7 +253,7 @@ pub fn Context(comptime T: type) type {
         pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
             return @This(){
                 .alloc = alloc,
-                .modified = false,
+                .modified = .Init,
                 .handle_count = 0,
                 .nodes = ArrayList(Node).init(alloc),
                 .listeners = ArrayList(Listener).init(alloc),
@@ -231,9 +263,43 @@ pub fn Context(comptime T: type) type {
             };
         }
 
+        pub fn print_list(this: @This(), print: fn ([]const u8) void) !void {
+            const header = try std.fmt.allocPrint(this.alloc, "{s:^16}|{s:^16}|{s:^8}|{s:^8}", .{ "layout", "datatype", "children", "hidden" });
+            defer this.alloc.free(header);
+            print(header);
+            for (this.nodes.items) |node| {
+                const typename: [*:0]const u8 = @tagName(node.layout);
+                const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
+                const log = try std.fmt.allocPrint(this.alloc, "{s:<16}|{s:^16}|{:^8}|{:^8}", .{ typename, dataname, node.children, node.hidden });
+                defer this.alloc.free(log);
+                print(log);
+            }
+        }
+
+        pub fn print_debug(this: @This(), print: fn ([]const u8) void) void {
+            var child_iter = this.get_root_iter();
+            while (child_iter.next()) |childi| {
+                this.print_recursive(print, childi, 0);
+            }
+        }
+
+        pub fn print_recursive(this: @This(), print: fn ([]const u8) void, index: usize, depth: usize) void {
+            const node = this.nodes.items[index];
+            const typename: [*:0]const u8 = @tagName(node.layout);
+            const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
+            const depth_as_bits = @as(u8, 1) << @intCast(u3, depth);
+            const log = std.fmt.allocPrint(this.alloc, "{b:>8}\t{:>16}|{s:<16}|{s:^16}|{:^8}|{:^8}", .{ depth_as_bits, node.handle, typename, dataname, node.children, node.hidden }) catch @panic("yeah");
+            defer this.alloc.free(log);
+            print(log);
+            var child_iter = this.get_child_iter(index);
+            while (child_iter.next()) |childi| {
+                this.print_recursive(print, childi, depth + 1);
+            }
+        }
+
         /// Create a new node under given parent. Pass null to create a top level element.
         pub fn insert(this: *@This(), parent_opt: ?usize, node: Node) !usize {
-            this.modified = true;
+            this.modified = .Element;
             const handle = this.handle_count;
             this.handle_count += 1;
             var index: usize = undefined;
@@ -305,7 +371,7 @@ pub fn Context(comptime T: type) type {
                 if (listener.handle == node.handle and event._type == listener.event) {
                     if (listener.callback(node, event)) |new_node| {
                         this.nodes.items[index] = new_node;
-                        this.modified = true;
+                        this.modified = .Element;
                     }
                 }
             }
@@ -316,7 +382,7 @@ pub fn Context(comptime T: type) type {
                     if (listener.handle == parent.handle and event._type == listener.event) {
                         if (listener.callback(parent, event)) |new_node| {
                             this.nodes.items[parent_index] = new_node;
-                            this.modified = true;
+                            this.modified = .Element;
                         }
                     }
                 }
@@ -345,6 +411,8 @@ pub fn Context(comptime T: type) type {
                         continue;
                     }
                     if (rect_contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !mouse_captured) {
+                        // const default = @import("ui/default.zig");
+                        // default.print_debug(node);
                         this.nodes.items[i].pointer_over = true;
                         this.nodes.items[i].pointer_pressed = inputs.pointer.left;
                         if (node.event_filter == .Prevent) {
@@ -428,17 +496,19 @@ pub fn Context(comptime T: type) type {
         }
 
         /// Layout
-        pub fn layout(this: *@This(), screen: Rect) void {
+        pub fn layout(this: *@This(), screen: Rect) !void {
             // Nothing to layout
-            defer this.modified = false;
             if (this.nodes.items.len == 0) return;
-            if (!this.modified) return;
+            if (this.modified) |modification| {
+                try this.reorder(modification);
+            }
 
             // Layout top level
             var childIter = this.get_root_iter();
-            var child_count: usize = 0;
-            while (childIter.next()) |childi| : (child_count += 1) {
-                this.root_layout = this.run_layout(this.root_layout, screen, childi, child_count);
+            const child_count = this.get_root_child_count();
+            var child_num: usize = 0;
+            while (childIter.next()) |childi| : (child_num += 1) {
+                this.root_layout = this.run_layout(this.root_layout, screen, childi, child_num, child_count);
                 // Run layout for child nodes
                 this.layout_children(childi);
             }
@@ -450,16 +520,17 @@ pub fn Context(comptime T: type) type {
                 this.nodes.items[index].layout.VList.top = 0;
             }
             var childIter = this.get_child_iter(index);
-            var child_count: usize = 0;
-            while (childIter.next()) |childi| : (child_count += 1) {
-                this.nodes.items[index].layout = this.run_layout(this.nodes.items[index].layout, node.bounds, childi, child_count);
+            const child_count = this.get_child_count(index);
+            var child_num: usize = 0;
+            while (childIter.next()) |childi| : (child_num += 1) {
+                this.nodes.items[index].layout = this.run_layout(this.nodes.items[index].layout, node.bounds, childi, child_num, child_count);
                 // Run layout for child nodes
                 this.layout_children(childi);
             }
         }
 
         /// Runs the layout function and returns the new state of the layout component, if applicable
-        fn run_layout(this: *@This(), which_layout: Layout, bounds: Rect, child_index: usize, _: usize) Layout {
+        fn run_layout(this: *@This(), which_layout: Layout, bounds: Rect, child_index: usize, child_num: usize, child_count: usize) Layout {
             const child = this.nodes.items[child_index];
             switch (which_layout) {
                 .Fill => {
@@ -469,7 +540,15 @@ pub fn Context(comptime T: type) type {
                 .Relative => {
                     const pos = top_left(bounds);
                     // Layout top level
-                    this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], child.min_size[0], child.min_size[1] };
+                    this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], pos[0] + child.min_size[0], pos[1] + child.min_size[1] };
+                    return .Relative;
+                },
+                .Center => {
+                    const min_half = @divTrunc(child.min_size, Vec{ 2, 2 });
+                    const center = @divTrunc(rect_size(bounds), Vec{ 2, 2 });
+                    const pos = center - min_half;
+                    // Layout top level
+                    this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], pos[0] + child.min_size[0], pos[1] + child.min_size[1] };
                     return .Relative;
                 },
                 .Anchor => |anchor_data| {
@@ -486,8 +565,26 @@ pub fn Context(comptime T: type) type {
                 .VList => |vlist_data| {
                     const _left = bounds[0];
                     const _top = bounds[1] + vlist_data.top;
-                    this.nodes.items[child_index].bounds = Rect{ _left, _top, _left + child.min_size[0], _top + child.min_size[1] };
+                    this.nodes.items[child_index].bounds = Rect{ _left, _top, bounds[2], _top + child.min_size[1] };
                     return .{ .VList = .{ .top = _top + child.min_size[1] } };
+                },
+                .HList => |hlist_data| {
+                    const _left = bounds[0] + hlist_data.left;
+                    const _top = bounds[1];
+                    this.nodes.items[child_index].bounds = Rect{ _left, _top, _left + child.min_size[0], bounds[3] };
+                    return .{ .HList = .{ .left = _left + child.min_size[0] } };
+                },
+                .VDiv => {
+                    const vsize = @divTrunc(rect_size(bounds)[1], @intCast(i32, child_count));
+                    const num = @intCast(i32, child_num);
+                    this.nodes.items[child_index].bounds = Rect{ bounds[0], bounds[1] + vsize * num, bounds[2], bounds[1] + vsize * (num + 1) };
+                    return .VDiv;
+                },
+                .HDiv => {
+                    const hsize = @divTrunc(rect_size(bounds)[0], @intCast(i32, child_count));
+                    const num = @intCast(i32, child_num);
+                    this.nodes.items[child_index].bounds = Rect{ bounds[0] + hsize * num, bounds[1], bounds[0] + hsize * (num + 1), bounds[3] };
+                    return .HDiv;
                 },
             }
         }
@@ -530,7 +627,15 @@ pub fn Context(comptime T: type) type {
             if (node.children <= 1) return node.children;
             var children: usize = 0;
             var childIter = this.get_child_iter(index);
-            while (childIter.next()) : (children += 1) {}
+            while (childIter.next()) |_| : (children += 1) {}
+            return children;
+        }
+
+        pub fn get_root_child_count(this: @This()) usize {
+            if (this.get_count() <= 1) return this.get_count();
+            var children: usize = 0;
+            var childIter = this.get_root_iter();
+            while (childIter.next()) |_| : (children += 1) {}
             return children;
         }
 
@@ -580,7 +685,7 @@ pub fn Context(comptime T: type) type {
 
         pub fn toggle_hidden(this: *@This(), handle: usize) bool {
             if (this.get_index_by_handle(handle)) |i| {
-                var rootnode = this.nodes.items[i];
+                const rootnode = this.nodes.items[i];
                 const hidden = !rootnode.hidden;
                 var slice = this.nodes.items[i .. i + rootnode.children];
                 set_slice_hidden(slice, hidden);
@@ -593,7 +698,7 @@ pub fn Context(comptime T: type) type {
         pub fn set_node(this: *@This(), node: Node) bool {
             if (this.get_index_by_handle(node.handle)) |i| {
                 this.nodes.items[i] = node;
-                this.modified = true;
+                this.modified = .Element;
                 return true;
             }
             return false;
@@ -642,29 +747,44 @@ pub fn Context(comptime T: type) type {
             return null;
         }
 
-        /// Move an item to the front of it's parent. Will invalidate the given
-        /// id and any ids under that parent that are in front of it.
-        pub fn bring_to_front(this: *@This(), id: usize) void {
-            std.debug.assert(id < this.nodes.len);
-            if (id == this.nodes.len - 1) {
-                // Do nothing, the node is already at the front
-                return;
+        /// Prepare to move a node and all it's children to the front of it's parent.
+        pub fn bring_to_front(this: *@This(), handle: usize) void {
+            this.modified = .{ .BringToFront = handle };
+        }
+
+        fn reorder(this: *@This(), modification: Modification) !void {
+            switch (modification) {
+                .Init, .Element => {
+                    this.modified = null;
+                },
+                .BringToFront => |handle| {
+                    const id = this.get_index_by_handle(handle) orelse {
+                        this.modified = null;
+                        return;
+                    };
+                    std.debug.assert(id < this.nodes.items.len);
+                    if (id == this.nodes.items.len - 1) {
+                        // Do nothing, the node is already at the front
+                        return;
+                    }
+                    // Copy the array so we can shift things around
+                    const nodes = try this.nodes.clone();
+                    defer nodes.deinit();
+                    const node = nodes.items[id];
+
+                    // Grab slice containing the node and its children
+                    const node_and_children = nodes.items[id .. id + node.children];
+
+                    const parent_id = this.get_parent(id).?;
+                    const parent = nodes.items[parent_id];
+                    const rest = nodes.items[id + node.children + 1 .. parent_id + parent.children + 1];
+
+                    // Insert elements in new order
+                    try this.nodes.replaceRange(id, rest.len, rest);
+                    try this.nodes.replaceRange(id + rest.len, node_and_children.len, node_and_children);
+                    this.modified = null;
+                },
             }
-            // Copy the array so we can shift things around
-            const nodes = this.nodes.clone();
-            defer nodes.deinit();
-            const node = nodes.items[id];
-
-            // Grab slice containing the node and its children
-            const node_and_children = nodes.items[id .. id + node.children];
-
-            const parent_id = this.get_parent(id);
-            const parent = nodes.items[parent_id];
-            const rest = nodes.items[id + node.children .. parent_id + parent.children];
-
-            // Insert elements in new order
-            this.nodes.replaceRange(id, rest.len, rest);
-            this.nodes.replaceRange(id + rest.len, node_and_children.len, node_and_children);
         }
     };
 }
