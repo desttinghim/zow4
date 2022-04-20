@@ -11,16 +11,82 @@ pub const vec = struct {
     pub const x = 0;
     pub const y = 1;
 
+    /////////////////////////////////////////
+    // i32 integer backed vector functions //
+    /////////////////////////////////////////
+
+    /// Returns true x = x and y = y
     pub fn equals(v1: Vec2, v2: Vec2) bool {
         return @reduce(.And, v1 == v2);
     }
 
+    /// Returns true if the vector is zero
     pub fn isZero(v: Vec2) bool {
         return equals(v, Vec2{ 0, 0 });
     }
 
+    /// Copies the vectors x and y to make a rect
     pub fn double(v: Vec2) Rect {
         return Rect{ v[0], v[1], v[0], v[1] };
+    }
+
+    /// Returns the length of the vector, squared
+    pub fn length_sqr(a: Vec2) i32 {
+        return @reduce(.Add, a * a);
+    }
+
+    /// Returns the distance squared
+    pub fn dist_sqr(a: Vec2, b: Vec2) i32 {
+        return length_sqr(a - b);
+    }
+
+    /// Returns the length of the vector.
+    /// NOTE: Conversion between floats and ints on WASM appears
+    /// to be broken, so this may not return the correct results.
+    pub fn length(a: Vec2) i32 {
+        return @floatToInt(i32, @sqrt(@intToFloat(f32, length_sqr(a))));
+    }
+
+    /// Returns the distance between two vectors (assuming they are points).
+    /// NOTE: Conversion between floats and ints on WASM appears
+    /// to be broken, so this may not return the correct results.
+    pub fn dist(a: Vec2, b: Vec2) i32 {
+        return length(a - b);
+    }
+
+    ///////////////////////////////////////
+    // f32 float backed vector functions //
+    ///////////////////////////////////////
+
+    /// Rturns the distance between two vectors
+    pub fn distf(a: Vec2f, b: Vec2f) f32 {
+        var subbed = @fabs(a - b);
+        return lengthf(subbed);
+    }
+
+    /// Returns the length between two vectors
+    pub fn lengthf(vector: Vec2f) f32 {
+        var squared = vector * vector;
+        return @sqrt(@reduce(.Add, squared));
+    }
+
+    /// Returns the normalized vector
+    pub fn normalizef(vector: Vec2f) Vec2f {
+        return vector / @splat(2, lengthf(vector));
+    }
+
+    /// Converts an i32 backed vector to a f32 backed one.
+    /// NOTE: Conversion between floats and ints on WASM appears
+    /// to be broken, so this may not return the correct results.
+    pub fn itof(vec2: Vec2) Vec2f {
+        return Vec2f{ @intToFloat(f32, vec2[0]), @intToFloat(f32, vec2[1]) };
+    }
+
+    /// Converts a f32 backed vector to an i32 backed one.
+    /// NOTE: Conversion between floats and ints on WASM appears
+    /// to be broken, so this may not return the correct results.
+    pub fn ftoi(vec2f: Vec2f) Vec2 {
+        return Vec2{ @floatToInt(i32, @floor(vec2f[0])), @floatToInt(i32, @floor(vec2f[1])) };
     }
 };
 
@@ -75,44 +141,6 @@ pub const DirF = struct {
     pub const left = Vec2f{ -1, 0 };
     pub const right = Vec2f{ 1, 0 };
 };
-
-pub fn lengthSquared(a: Vec2) i32 {
-    return @reduce(.Add, a * a);
-}
-
-pub fn length(a: Vec2) i32 {
-    return @floatToInt(i32, @intToFloat(f32, lengthSquared(a)));
-}
-
-pub fn distSquared(a: Vec2, b: Vec2) i32 {
-    return lengthSquared(a - b);
-}
-
-pub fn dist(a: Vec2, b: Vec2) i32 {
-    return length(a - b);
-}
-
-pub fn distancef(a: Vec2f, b: Vec2f) f32 {
-    var subbed = @fabs(a - b);
-    return lengthf(subbed);
-}
-
-pub fn lengthf(vector: Vec2f) f32 {
-    var squared = vector * vector;
-    return @sqrt(@reduce(.Add, squared));
-}
-
-pub fn normalizef(vector: Vec2f) Vec2f {
-    return vector / @splat(2, lengthf(vector));
-}
-
-pub fn vec2ToVec2f(vec2: Vec2) Vec2f {
-    return Vec2f{ @intToFloat(f32, vec2[0]), @intToFloat(f32, vec2[1]) };
-}
-
-pub fn vec2fToVec2(vec2f: Vec2f) Vec2 {
-    return Vec2{ @floatToInt(i32, @floor(vec2f[0])), @floatToInt(i32, @floor(vec2f[1])) };
-}
 
 pub const AABB = struct {
     pos: Vec2,

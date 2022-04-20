@@ -22,8 +22,8 @@ pub fn quadratic_bezier(p1: geom.Vec2f, p2: geom.Vec2f, p3: geom.Vec2f) void {
     i = 0;
     while (i < QuadraticSegments) : (i += 1) {
         const j = i + 1;
-        const ipt = geom.vec2fToVec2(pts[i]);
-        const jpt = geom.vec2fToVec2(pts[j]);
+        const ipt = geom.vec.ftoi(pts[i]);
+        const jpt = geom.vec.ftoi(pts[j]);
         w4.line(ipt[0], ipt[1], jpt[0], jpt[1]);
     }
 }
@@ -47,8 +47,8 @@ pub fn cubic_bezier(p1: geom.Vec2f, p2: geom.Vec2f, p3: geom.Vec2f, p4: geom.Vec
     i = 0;
     while (i < CubicSegments) : (i += 1) {
         const j = i + 1;
-        const ipt = geom.vec2fToVec2(pts[i]);
-        const jpt = geom.vec2fToVec2(pts[j]);
+        const ipt = geom.vec.ftoi(pts[i]);
+        const jpt = geom.vec.ftoi(pts[j]);
         w4.line(ipt[0], ipt[1], jpt[0], jpt[1]);
     }
 }
