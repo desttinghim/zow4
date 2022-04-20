@@ -20,32 +20,36 @@ export fn update() void {
         switch (e) {
             error.OutOfMemory => w4.trace("Out of Memory"),
         }
-        @panic("Couldn't initialize");
+        @panic("Couldn't update");
     };
 }
 
-const App = struct {
-    const UI = zow4.ui.context.default;
+fn drag_handler(node: ui.default.Node, event: zow4.ui.context.EventData) ?ui.default.Node {
+    if (node.handle != app.wm_handle) return null;
+    const margin = node.layout.Anchor.margin;
+    switch (event._type) {
+        .PointerPress => {
+            if (app.grab != null) return null;
+            app.grab = .{ .handle = node.handle, .vec = event.pointer.pos - ui.top_left(margin) };
+        },
+        else => {},
+    }
+    return null;
+}
 
-    ui: UI.DefaultUIContext,
+fn toggle_window(_: ui.default.Node, _: ui.EventData) ?ui.default.Node {
+    _ = app.ui.toggle_hidden(app.wm_handle);
+    return null;
+}
+
+const ui = zow4.ui.context;
+const App = struct {
+    ui: ui.default.DefaultUIContext,
     fba: std.heap.FixedBufferAllocator,
     alloc: std.mem.Allocator,
 
-    fn say_hi(node: UI.Node, event: zow4.ui.context.Event) void {
-        _ = node;
-        _ = event;
-        w4.trace("hi");
-    }
-    fn say_bye(node: UI.Node, event: zow4.ui.context.Event) void {
-        _ = node;
-        _ = event;
-        w4.trace("bye");
-    }
-    fn say_click(node: UI.Node, event: zow4.ui.context.Event) void {
-        _ = node;
-        _ = event;
-        w4.trace("click!");
-    }
+    wm_handle: usize,
+    grab: ?struct { handle: usize, vec: ui.Vec } = null,
 
     fn init() !@This() {
         // Initialize dynamic memory
@@ -53,43 +57,55 @@ const App = struct {
         var alloc = fba.allocator();
 
         var this = @This(){
-            .ui = UI.DefaultUI.init(alloc),
+            .ui = ui.default.DefaultUI.init(alloc),
             .fba = fba,
             .alloc = alloc,
+            .wm_handle = undefined,
         };
 
         this.ui.root_layout = .Fill;
 
-        const relative = try this.ui.insert(null, .{ .layout = .Relative });
+        const relative = try this.ui.insert(null, .{
+            .layout = .Relative,
+        });
 
-        const anchor = try this.ui.insert(null, .{ .layout = .{
-            .Anchor = .{
-                .anchor = .{ 0, 0, 100, 100 },
-                .margin = .{ 32, 32, -32, -32 },
+        this.wm_handle = try this.ui.insert(null, .{
+            .capture_pointer = false,
+            .event_filter = .Pass,
+            .layout = .{
+                .Anchor = .{
+                    .anchor = .{ 0, 0, 0, 0 },
+                    .margin = .{ 0, 0, 80, 80 },
+                },
             },
-        } });
+        });
+        try this.ui.listen(this.wm_handle, .PointerPress, drag_handler);
+        const window = try this.ui.insert(this.wm_handle, .{
+            .capture_pointer = true,
+            .layout = .{ .Anchor = .{
+                .anchor = .{ 0, 0, 100, 100 },
+                .margin = .{ 2, 2, 2, 2 },
+            } },
+            .has_background = true,
+        });
 
         const vlist = try this.ui.insert(relative, .{ .layout = .{ .VList = .{} } });
 
-        const btn = try this.ui.insert(vlist, .{
+        const button = try this.ui.insert(vlist, .{
             .capture_pointer = true,
             .data = .{
                 .Button = "uicontext",
             },
         });
-        try this.ui.listen(btn, .PointerPress, say_hi);
-        try this.ui.listen(btn, .PointerRelease, say_bye);
-        try this.ui.listen(btn, .PointerClick, say_click);
+        try this.ui.listen(button, .PointerClick, toggle_window);
 
-        _ = try this.ui.insert(anchor, .{
-            .capture_pointer = true,
-            .has_background = true,
+        _ = try this.ui.insert(window, .{
             .data = .{
                 .Label = "uicontext",
             },
         });
 
-        try this.ui.layout(.{ 0, 0, 160, 160 });
+        this.ui.layout(.{ 0, 0, 160, 160 });
 
         return this;
     }
@@ -114,9 +130,22 @@ const App = struct {
                 .reject = input.btn(.one, .z),
             },
         });
-        // var buf: [100]u8 = undefined;
-        // var msg = std.fmt.bufPrint(&buf, "{}, {}", .{ mouse_pos[0], mouse_pos[1] }) catch "huh";
-        // w4.textUtf8(msg.ptr, msg.len, 0, 80);
+        if (this.grab) |grab| {
+            if (this.ui.get_node(grab.handle)) |oldnode| {
+                var node = oldnode;
+                const margin = &node.layout.Anchor.margin;
+                const topleft = mouse_pos - grab.vec;
+                const bottomright = topleft + ui.rect_size(margin.*);
+                margin.* = ui.Rect{ topleft[0], topleft[1], bottomright[0], bottomright[1] };
+                if (!this.ui.set_node(node)) {
+                    w4.trace("couldn't set node");
+                }
+                if (!input.mouse(.left)) {
+                    this.grab = null;
+                }
+            }
+        }
+        this.ui.layout(.{ 0, 0, 160, 160 });
         this.ui.paint();
         input.update();
     }

@@ -9,7 +9,7 @@ const w4 = @import("wasm4");
 pub const default = @import("default.zig");
 
 pub const Event = enum {
-    PointerMotion,
+    PointerMove,
     PointerPress,
     PointerRelease,
     PointerClick,
@@ -17,8 +17,12 @@ pub const Event = enum {
     PointerLeave,
 };
 
+pub const EventData = struct {
+    _type: Event,
+    pointer: PointerData,
+};
+
 pub const InputData = struct {
-    // event: Event,
     pointer: PointerData,
     keys: KeyData,
 };
@@ -99,6 +103,7 @@ pub const Layout = union(enum) {
 /// Provide your basic types
 pub fn UIContext(comptime T: type) type {
     return struct {
+        pointer_pos: Vec = Vec{ 0, 0 },
         modified: bool,
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
@@ -118,7 +123,7 @@ pub fn UIContext(comptime T: type) type {
         pub const SizeFn = fn (T) Vec;
 
         pub const Listener = struct {
-            const Fn = fn (Node, Event) void;
+            const Fn = fn (Node, EventData) ?Node;
             handle: usize,
             event: Event,
             callback: Fn,
@@ -129,8 +134,10 @@ pub fn UIContext(comptime T: type) type {
             hidden: bool = false,
             /// Indicates whether the rect has a background and
             has_background: bool = false,
-            /// If the node captures pointer input
+            /// If the node recieves pointer events
             capture_pointer: bool = false,
+            /// If the node prevents other nodes from recieving events
+            event_filter: enum { Prevent, Pass } = .Prevent,
             /// Whether the pointer is over the node
             pointer_over: bool = false,
             /// If the pointer is pressed over the node
@@ -213,23 +220,51 @@ pub fn UIContext(comptime T: type) type {
             });
         }
 
-        pub fn dispatch(this: *@This(), handle: usize, event: Event) void {
+        pub fn listen_maybe(this: *@This(), handle: usize, event: Event, listenFn: Listener.Fn) void {
+            this.listeners.append(.{
+                .handle = handle,
+                .event = event,
+                .callback = listenFn,
+            }) catch {
+                // Don't do anything about the error
+                w4.trace("Listen maybe error.");
+            };
+        }
+
+        pub fn unlisten(this: *@This(), handle: usize, event: Event, listenFn: Listener.Fn) void {
+            var i: usize = 0;
+            while (i < this.listeners.items.len) : (i += 1) {
+                const listener = this.listeners.items[i];
+                if (listener.handle == handle and listener.event == event and listener.callback == listenFn) {
+                    _ = this.listeners.swapRemove(i);
+                    break;
+                }
+            }
+        }
+
+        pub fn dispatch(this: *@This(), handle: usize, event: EventData) void {
             this.dispatch_raw(this.get_index_by_handle(handle), event);
         }
 
-        fn dispatch_raw(this: *@This(), index: usize, event: Event) void {
+        fn dispatch_raw(this: *@This(), index: usize, event: EventData) void {
             const node = this.nodes.items[index];
             for (this.listeners.items) |listener| {
-                if (listener.handle == node.handle and event == listener.event) {
-                    listener.callback(node, event);
+                if (listener.handle == node.handle and event._type == listener.event) {
+                    if (listener.callback(node, event)) |new_node| {
+                        this.nodes.items[index] = new_node;
+                        this.modified = true;
+                    }
                 }
             }
             var parent_iter = this.get_parent_iter(index);
             while (parent_iter.next()) |parent_index| {
                 const parent = this.nodes.items[parent_index];
                 for (this.listeners.items) |listener| {
-                    if (listener.handle == parent.handle and event == listener.event) {
-                        listener.callback(parent, event);
+                    if (listener.handle == parent.handle and event._type == listener.event) {
+                        if (listener.callback(parent, event)) |new_node| {
+                            this.nodes.items[parent_index] = new_node;
+                            this.modified = true;
+                        }
                     }
                 }
             }
@@ -241,6 +276,9 @@ pub fn UIContext(comptime T: type) type {
                 // Iterate backwards until we find an element that contains the mouse, then dispatch
                 // the event. Dispatching will bubble the event to the topmost element.
                 var mouse_captured = false;
+                const pointer_diff = inputs.pointer.pos - this.pointer_pos;
+                this.pointer_pos = inputs.pointer.pos;
+                const pointer_moved = @reduce(.Or, pointer_diff != Vec{ 0, 0 });
                 var i = this.nodes.items.len - 1;
                 var run = true;
                 while (run) : (i -|= 1) {
@@ -253,51 +291,60 @@ pub fn UIContext(comptime T: type) type {
                     if (node.hidden) {
                         continue;
                     }
-                    if (rect_contains(node.bounds, inputs.pointer.pos)) {
+                    if (rect_contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !mouse_captured) {
                         this.nodes.items[i].pointer_over = true;
                         this.nodes.items[i].pointer_pressed = inputs.pointer.left;
-                        if (node.capture_pointer and !mouse_captured) {
+                        if (node.event_filter == .Prevent) {
                             mouse_captured = true;
-                            var mouse_enter = false;
-                            var mouse_pressed = false;
-                            var mouse_released = false;
-                            // Node now contains the old state
-                            if (!node.pointer_over) {
-                                this.dispatch_raw(i, .PointerEnter);
-                                mouse_enter = true;
-                            }
-                            if (node.pointer_pressed and !inputs.pointer.left) {
-                                this.dispatch_raw(i, .PointerRelease);
-                                mouse_released = true;
-                            }
-                            if (!node.pointer_pressed and inputs.pointer.left) {
-                                this.dispatch_raw(i, .PointerPress);
-                                mouse_pressed = true;
-                            }
-                            const nptr = &this.nodes.items[i].pointer_state;
-                            switch (node.pointer_state) {
-                                .Open => {
-                                    if (mouse_enter) nptr.* = .Hover;
-                                    if (mouse_pressed) nptr.* = .Pressed;
-                                },
-                                .Hover => {
-                                    if (mouse_pressed) nptr.* = .Pressed;
-                                },
-                                .Pressed => {
-                                    if (mouse_released) nptr.* = .Clicked;
-                                },
-                                .Clicked => {
-                                    this.dispatch_raw(i, .PointerClick);
-                                    nptr.* = .Open;
-                                },
-                            }
+                        }
+                        var mouse_enter = false;
+                        var mouse_pressed = false;
+                        var mouse_released = false;
+                        // Node now contains the old state
+                        var event_data = EventData{ ._type = .PointerEnter, .pointer = inputs.pointer };
+                        if (!node.pointer_over) {
+                            event_data._type = .PointerEnter;
+                            this.dispatch_raw(i, event_data);
+                            mouse_enter = true;
+                        }
+                        if (pointer_moved) {
+                            event_data._type = .PointerMove;
+                            this.dispatch_raw(i, event_data);
+                        }
+                        if (node.pointer_pressed and !inputs.pointer.left) {
+                            event_data._type = .PointerRelease;
+                            this.dispatch_raw(i, event_data);
+                            mouse_released = true;
+                        }
+                        if (!node.pointer_pressed and inputs.pointer.left) {
+                            event_data._type = .PointerPress;
+                            this.dispatch_raw(i, event_data);
+                            mouse_pressed = true;
+                        }
+                        const nptr = &this.nodes.items[i].pointer_state;
+                        switch (node.pointer_state) {
+                            .Open => {
+                                if (mouse_enter) nptr.* = .Hover;
+                                if (mouse_pressed) nptr.* = .Pressed;
+                            },
+                            .Hover => {
+                                if (mouse_pressed) nptr.* = .Pressed;
+                            },
+                            .Pressed => {
+                                if (mouse_released) nptr.* = .Clicked;
+                            },
+                            .Clicked => {
+                                event_data._type = .PointerClick;
+                                this.dispatch_raw(i, event_data);
+                                nptr.* = .Open;
+                            },
                         }
                     } else {
                         this.nodes.items[i].pointer_over = false;
                         this.nodes.items[i].pointer_pressed = false;
                         if (node.pointer_over) {
                             this.nodes.items[i].pointer_state = .Open;
-                            this.dispatch_raw(i, .PointerLeave);
+                            this.dispatch_raw(i, .{ ._type = .PointerLeave, .pointer = inputs.pointer });
                         }
                     }
                 }
@@ -328,39 +375,33 @@ pub fn UIContext(comptime T: type) type {
         }
 
         /// Layout
-        pub fn layout(this: *@This(), screen: Rect) !void {
+        pub fn layout(this: *@This(), screen: Rect) void {
             // Nothing to layout
             defer this.modified = false;
             if (this.nodes.items.len == 0) return;
+            if (!this.modified) return;
 
-            // Queue determines next item to run layout on
-            var queue = std.PriorityQueue(NodeDepth, void, order_node_depth).init(this.alloc, {});
-            defer queue.deinit();
-
-            // Run the root layout function
-            {
-                var childIter = this.get_root_iter();
-                // Layout top level
-                var child_count: usize = 0;
-                while (childIter.next()) |childi| : (child_count += 1) {
-                    _ = this.run_layout(this.root_layout, screen, childi, child_count);
-                    try queue.add(NodeDepth{ .node = childi, .depth = 0 });
-                }
+            // Layout top level
+            var childIter = this.get_root_iter();
+            var child_count: usize = 0;
+            while (childIter.next()) |childi| : (child_count += 1) {
+                this.root_layout = this.run_layout(this.root_layout, screen, childi, child_count);
+                // Run layout for child nodes
+                this.layout_children(childi);
             }
+        }
 
-            while (queue.removeOrNull()) |node_depth| {
-                const i = node_depth.node;
-                const depth = node_depth.depth;
-                const node = this.nodes.items[i];
-                if (node.layout == .VList) {
-                    this.nodes.items[i].layout.VList.top = 0;
-                }
-                var childIter = this.get_child_iter(i);
-                var child_count: usize = 0;
-                while (childIter.next()) |childi| : (child_count += 1) {
-                    this.nodes.items[i].layout = this.run_layout(this.nodes.items[i].layout, node.bounds, childi, child_count);
-                    try queue.add(NodeDepth{ .node = childi, .depth = depth + 1 });
-                }
+        pub fn layout_children(this: *@This(), index: usize) void {
+            const node = this.nodes.items[index];
+            if (node.layout == .VList) {
+                this.nodes.items[index].layout.VList.top = 0;
+            }
+            var childIter = this.get_child_iter(index);
+            var child_count: usize = 0;
+            while (childIter.next()) |childi| : (child_count += 1) {
+                this.nodes.items[index].layout = this.run_layout(this.nodes.items[index].layout, node.bounds, childi, child_count);
+                // Run layout for child nodes
+                this.layout_children(childi);
             }
         }
 
@@ -449,6 +490,60 @@ pub fn UIContext(comptime T: type) type {
                 if (node.handle == handle) return i;
             }
             return null;
+        }
+
+        pub fn get_node(this: @This(), handle: usize) ?Node {
+            if (this.get_index_by_handle(handle)) |node| {
+                return this.nodes.items[node];
+            }
+            return null;
+        }
+
+        pub fn set_slice_hidden(slice: []Node, hidden: bool) void {
+            for (slice) |*node| {
+                node.*.hidden = hidden;
+            }
+        }
+
+        pub fn hide_node(this: *@This(), handle: usize) bool {
+            if (this.get_index_by_handle(handle)) |i| {
+                var rootnode = this.nodes.items[i];
+                var slice = this.nodes.items[i .. i + rootnode.children];
+                set_slice_hidden(slice, true);
+                return true;
+            }
+            return false;
+        }
+
+        pub fn show_node(this: *@This(), handle: usize) bool {
+            if (this.get_index_by_handle(handle)) |i| {
+                var rootnode = this.nodes.items[i];
+                var slice = this.nodes.items[i .. i + rootnode.children];
+                set_slice_hidden(slice, false);
+                return true;
+            }
+            return false;
+        }
+
+        pub fn toggle_hidden(this: *@This(), handle: usize) bool {
+            if (this.get_index_by_handle(handle)) |i| {
+                var rootnode = this.nodes.items[i];
+                const hidden = !rootnode.hidden;
+                var slice = this.nodes.items[i .. i + rootnode.children];
+                set_slice_hidden(slice, hidden);
+                return true;
+            }
+            return false;
+        }
+
+        /// Returns true if the node existed
+        pub fn set_node(this: *@This(), node: Node) bool {
+            if (this.get_index_by_handle(node.handle)) |i| {
+                this.nodes.items[i] = node;
+                this.modified = true;
+                return true;
+            }
+            return false;
         }
 
         const ParentIter = struct {
