@@ -84,7 +84,7 @@ pub fn Context(comptime T: type) type {
                 .reject = false,
             },
         },
-        pointer_pos: Vec = Vec{ 0, 0 },
+        pointer_start_press: Vec = Vec{ 0, 0 },
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
         root_layout: Layout = .Fill,
@@ -372,12 +372,20 @@ pub fn Context(comptime T: type) type {
         /// Call this method every time input is recieved
         pub fn update(this: *@This(), inputs: InputData) void {
             {
-                // Iterate backwards until we find an element that contains the mouse, then dispatch
+                // Collect info about state
+                const pointer_diff = inputs.pointer.pos - this.inputs_last.pointer.pos;
+                const pointer_move= @reduce(.Or, pointer_diff != Vec{ 0, 0 });
+                const pointer_press= !this.inputs_last.pointer.left and inputs.pointer.left;
+                const pointer_release= this.inputs_last.pointer.left and !inputs.pointer.left;
+                if (pointer_press) {
+                    this.pointer_start_press = inputs.pointer.pos;
+                }
+                const drag_threshold = 2;
+                const pointer_drag = inputs.pointer.left and g.dist(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
+
+                // Iterate backwards until we find an element that contains the pointer, then dispatch
                 // the event. Dispatching will bubble the event to the topmost element.
-                var mouse_captured = false;
-                const pointer_diff = inputs.pointer.pos - this.pointer_pos;
-                this.pointer_pos = inputs.pointer.pos;
-                const pointer_moved = @reduce(.Or, pointer_diff != Vec{ 0, 0 });
+                var pointer_captured = false;
                 var i = this.nodes.items.len - 1;
                 var run = true;
                 while (run) : (i -|= 1) {
@@ -390,51 +398,47 @@ pub fn Context(comptime T: type) type {
                     if (node.hidden) {
                         continue;
                     }
-                    if (g.rect.contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !mouse_captured) {
+                    if (g.rect.contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !pointer_captured) {
                         this.nodes.items[i].pointer_over = true;
                         this.nodes.items[i].pointer_pressed = inputs.pointer.left;
                         if (node.event_filter == .Prevent) {
-                            mouse_captured = true;
+                            pointer_captured = true;
                         }
-                        var mouse_enter = false;
-                        var mouse_pressed = false;
-                        var mouse_released = false;
+                        var pointer_enter = false;
                         // Node now contains the old state
                         var event_data = EventData{ ._type = .PointerEnter, .pointer = inputs.pointer };
                         if (!node.pointer_over) {
                             event_data._type = .PointerEnter;
                             this.dispatch_raw(i, event_data);
-                            mouse_enter = true;
+                            pointer_enter = true;
                         }
-                        if (pointer_moved) {
+                        if (pointer_move) {
                             event_data._type = .PointerMove;
                             this.dispatch_raw(i, event_data);
                         }
-                        if (this.inputs_last.pointer.left and !inputs.pointer.left) {
+                        if (pointer_release) {
                             event_data._type = .PointerRelease;
                             this.dispatch_raw(i, event_data);
-                            mouse_released = true;
                         }
-                        if (!this.inputs_last.pointer.left and inputs.pointer.left) {
+                        if (pointer_press) {
                             event_data._type = .PointerPress;
                             this.dispatch_raw(i, event_data);
-                            mouse_pressed = true;
                         }
                         const nptr = &this.nodes.items[i].pointer_state;
                         switch (node.pointer_state) {
                             .Open => {
-                                if (mouse_enter) nptr.* = .Hover;
-                                if (mouse_pressed) nptr.* = .Press;
+                                if (pointer_enter) nptr.* = .Hover;
+                                if (pointer_press) nptr.* = .Press;
                             },
                             .Hover => {
-                                if (mouse_pressed) nptr.* = .Press;
+                                if (pointer_press) nptr.* = .Press;
                             },
                             .Press => {
-                                if (mouse_released) nptr.* = .Click;
-                                if (pointer_moved) nptr.* = .Drag;
+                                if (pointer_release) nptr.* = .Click;
+                                if (pointer_drag) nptr.* = .Drag;
                             },
                             .Drag => {
-                                if (mouse_released) nptr.* = .Hover;
+                                if (pointer_release) nptr.* = .Hover;
                             },
                             .Click => {
                                 event_data._type = .PointerClick;
