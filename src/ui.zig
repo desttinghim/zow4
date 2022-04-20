@@ -5,48 +5,9 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 
-const geom = @import("geometry.zig");
-const Vec = geom.Vec2;
-const Rect = geom.Rect;
-
-const vec_double = geom.Vec.double;
-
-// Utility Functions
-pub fn top(rect: Rect) i32 {
-    return rect[1];
-}
-
-pub fn left(rect: Rect) i32 {
-    return rect[0];
-}
-
-pub fn top_left(rect: Rect) Vec {
-    return .{ rect[0], rect[1] };
-}
-
-pub fn right(rect: Rect) i32 {
-    return rect[2];
-}
-
-pub fn bottom(rect: Rect) i32 {
-    return rect[3];
-}
-
-pub fn bottom_right(rect: Rect) Vec {
-    return .{ rect[2], rect[3] };
-}
-
-pub fn rect_size(rect: Rect) Vec {
-    return .{ rect[2] - rect[0], rect[3] - rect[1] };
-}
-
-pub fn rect_contains(rect: Rect, vec: Vec) bool {
-    return @reduce(.And, top_left(rect) < vec) and @reduce(.And, bottom_right(rect) > vec);
-}
-
-pub fn rect_shift(rect: Rect, vec: Vec) Rect {
-    return rect + vec_double(vec);
-}
+const g = @import("geometry.zig");
+const Vec = g.Vec2;
+const Rect = g.Rect;
 
 pub const Event = enum {
     PointerMove,
@@ -168,7 +129,7 @@ pub fn Context(comptime T: type) type {
             /// If the pointer is pressed over the node
             pointer_pressed: bool = false,
             /// Pointer FSM
-            pointer_state: enum { Open, Hover, Pressed, Clicked } = .Open,
+            pointer_state: enum { Open, Hover, Press, Drag, Click } = .Open,
             /// How many descendants this node has
             children: usize = 0,
             /// A unique handle
@@ -429,7 +390,7 @@ pub fn Context(comptime T: type) type {
                     if (node.hidden) {
                         continue;
                     }
-                    if (rect_contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !mouse_captured) {
+                    if (g.rect.contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !mouse_captured) {
                         this.nodes.items[i].pointer_over = true;
                         this.nodes.items[i].pointer_pressed = inputs.pointer.left;
                         if (node.event_filter == .Prevent) {
@@ -463,15 +424,19 @@ pub fn Context(comptime T: type) type {
                         switch (node.pointer_state) {
                             .Open => {
                                 if (mouse_enter) nptr.* = .Hover;
-                                if (mouse_pressed) nptr.* = .Pressed;
+                                if (mouse_pressed) nptr.* = .Press;
                             },
                             .Hover => {
-                                if (mouse_pressed) nptr.* = .Pressed;
+                                if (mouse_pressed) nptr.* = .Press;
                             },
-                            .Pressed => {
-                                if (mouse_released) nptr.* = .Clicked;
+                            .Press => {
+                                if (mouse_released) nptr.* = .Click;
+                                if (pointer_moved) nptr.* = .Drag;
                             },
-                            .Clicked => {
+                            .Drag => {
+                                if (mouse_released) nptr.* = .Hover;
+                            },
+                            .Click => {
                                 event_data._type = .PointerClick;
                                 this.dispatch_raw(i, event_data);
                                 nptr.* = .Open;
@@ -559,25 +524,25 @@ pub fn Context(comptime T: type) type {
                     return .Fill;
                 },
                 .Relative => {
-                    const pos = top_left(bounds);
+                    const pos = g.rect.top_left(bounds);
                     // Layout top level
                     this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], pos[0] + child.min_size[0], pos[1] + child.min_size[1] };
                     return .Relative;
                 },
                 .Center => {
                     const min_half = @divTrunc(child.min_size, Vec{ 2, 2 });
-                    const center = @divTrunc(rect_size(bounds), Vec{ 2, 2 });
+                    const center = @divTrunc(g.rect.size(bounds), Vec{ 2, 2 });
                     const pos = center - min_half;
                     // Layout top level
                     this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], pos[0] + child.min_size[0], pos[1] + child.min_size[1] };
                     return .Relative;
                 },
                 .Anchor => |anchor_data| {
-                    const MAX = vec_double(.{ 100, 100 });
-                    const size_doubled = vec_double((bottom_right(bounds) - top_left(bounds)));
-                    const anchor = rect_shift(
+                    const MAX = g.vec.double(.{ 100, 100 });
+                    const size_doubled = g.vec.double((g.rect.bottom_right(bounds) - g.rect.top_left(bounds)));
+                    const anchor = g.rect.shift(
                         @divTrunc((MAX - (MAX - anchor_data.anchor)) * size_doubled, MAX),
-                        top_left(bounds),
+                        g.rect.top_left(bounds),
                     );
                     const margin = anchor + anchor_data.margin;
                     this.nodes.items[child_index].bounds = margin;
@@ -596,13 +561,13 @@ pub fn Context(comptime T: type) type {
                     return .{ .HList = .{ .left = hlist_data.left + child.min_size[0] } };
                 },
                 .VDiv => {
-                    const vsize = @divTrunc(rect_size(bounds)[1], @intCast(i32, child_count));
+                    const vsize = @divTrunc(g.rect.size(bounds)[1], @intCast(i32, child_count));
                     const num = @intCast(i32, child_num);
                     this.nodes.items[child_index].bounds = Rect{ bounds[0], bounds[1] + vsize * num, bounds[2], bounds[1] + vsize * (num + 1) };
                     return .VDiv;
                 },
                 .HDiv => {
-                    const hsize = @divTrunc(rect_size(bounds)[0], @intCast(i32, child_count));
+                    const hsize = @divTrunc(g.rect.size(bounds)[0], @intCast(i32, child_count));
                     const num = @intCast(i32, child_num);
                     this.nodes.items[child_index].bounds = Rect{ bounds[0] + hsize * num, bounds[1], bounds[0] + hsize * (num + 1), bounds[3] };
                     return .HDiv;

@@ -1,7 +1,7 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
-const v = geom.Vec;
+const v = geom.vec;
 const Text = @import("text.zig");
 
 // https://rosettacode.org/wiki/Bitmap/B%C3%A9zier_curves/Quadratic#C

@@ -1,7 +1,7 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const draw = @import("../draw.zig");
-const geom = @import("../geometry.zig");
+const g = @import("../geometry.zig");
 const text = @import("../text.zig");
 const ui = @import("../ui.zig");
 
@@ -27,7 +27,7 @@ pub const DefaultUI = union(enum) {
     /// Button
     Button: []const u8,
 
-    pub fn size(this: @This()) geom.Vec2 {
+    pub fn size(this: @This()) g.Vec2 {
         switch (this) {
             .Label => |label| {
                 const label_size = text.text_size(label);
@@ -66,10 +66,10 @@ pub const DefaultUI = union(enum) {
 
     pub fn paint(node: Node) void {
         if (node.has_background) {
-            var left = ui.left(node.bounds);
-            var top = ui.top(node.bounds);
+            var left = g.rect.left(node.bounds);
+            var top = g.rect.top(node.bounds);
 
-            const rect_size = ui.rect_size(node.bounds);
+            const rect_size = g.rect.size(node.bounds);
             // Make sure we are at least the minimum size to prevent crashing
             var sizex = @intCast(u32, rect_size[0]);
             var sizey = @intCast(u32, rect_size[1]);
@@ -88,12 +88,12 @@ pub const DefaultUI = union(enum) {
                     blit.blit(.{ node.bounds[0], node.bounds[1] });
                 },
                 .Button => |btn_label| {
-                    var left = ui.left(node.bounds);
-                    var right = ui.right(node.bounds);
-                    var top = ui.top(node.bounds);
-                    var bottom = ui.bottom(node.bounds);
+                    var left = g.rect.left(node.bounds);
+                    var right = g.rect.right(node.bounds);
+                    var top = g.rect.top(node.bounds);
+                    var bottom = g.rect.bottom(node.bounds);
 
-                    const rect_size = ui.rect_size(node.bounds);
+                    const rect_size = g.rect.size(node.bounds);
                     // Make sure we are at least the minimum size to prevent crashing
                     var sizex = @intCast(u32, if (rect_size[0] < node.min_size[0])
                         node.min_size[0]
@@ -109,7 +109,7 @@ pub const DefaultUI = union(enum) {
                     w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
                     var dark = false;
                     switch (node.pointer_state) {
-                        .Open, .Hover => {
+                        .Open, .Hover, .Drag => {
                             w4.DRAW_COLORS.* = 0x04;
                             // Render "Shadow"
                             w4.hline(left + 2, bottom - 1, sizex - 2);
@@ -122,12 +122,12 @@ pub const DefaultUI = union(enum) {
                                 w4.rect(left + 1, top + 1, sizex - 2, sizey - 2);
                             }
                         },
-                        .Pressed => {
+                        .Press => {
                             w4.DRAW_COLORS.* = 0x44;
                             w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
                             dark = true;
                         },
-                        .Clicked => {
+                        .Click => {
                             w4.DRAW_COLORS.* = 0x44;
                             w4.rect(left + 2, top + 2, sizex - 2, sizey - 2);
                             dark = true;

@@ -2,7 +2,7 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
 const input = zow4.input;
-const geom = zow4.geometry;
+const g = zow4.geometry;
 
 var app: App = undefined;
 
@@ -38,7 +38,7 @@ fn drag_handler(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Nod
     switch (event._type) {
         .PointerPress => {
             if (app.grab != null) return null;
-            app.grab = .{ .handle = node.handle, .vec = event.pointer.pos - ui.top_left(margin) };
+            app.grab = .{ .handle = node.handle, .vec = event.pointer.pos - g.rect.top_left(margin) };
         },
         else => {},
     }
@@ -62,7 +62,7 @@ const App = struct {
     alloc: std.mem.Allocator,
 
     wm_handle: usize,
-    grab: ?struct { handle: usize, vec: geom.Vec2 } = null,
+    grab: ?struct { handle: usize, vec: g.Vec2 } = null,
 
     fn init() !@This() {
         // Initialize dynamic memory
@@ -130,8 +130,8 @@ const App = struct {
                 var node = oldnode;
                 const margin = &node.layout.Anchor.margin;
                 const topleft = mouse_pos - grab.vec;
-                const bottomright = topleft + ui.rect_size(margin.*);
-                margin.* = geom.Rect{ topleft[0], topleft[1], bottomright[0], bottomright[1] };
+                const bottomright = topleft + g.rect.size(margin.*);
+                margin.* = g.Rect{ topleft[0], topleft[1], bottomright[0], bottomright[1] };
                 if (!this.ui.set_node(node)) {
                     w4.trace("couldn't set node");
                 }

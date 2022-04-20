@@ -7,7 +7,7 @@ pub const Vec2f = std.meta.Vector(2, f32);
 /// Represents a 2D signed Vector as .{ x, y }
 pub const Vec2 = std.meta.Vector(2, i32);
 
-pub const Vec = struct {
+pub const vec = struct {
     pub const x = 0;
     pub const y = 1;
 
@@ -15,16 +15,52 @@ pub const Vec = struct {
         return @reduce(.And, v1 == v2);
     }
 
-    pub fn isZero(vec: Vec2) bool {
-        return equals(vec, Vec2{ 0, 0 });
+    pub fn isZero(v: Vec2) bool {
+        return equals(v, Vec2{ 0, 0 });
     }
 
-    pub fn double(vec: Vec2) Rect {
-        return Rect{vec[0], vec[1], vec[0], vec[1]};
+    pub fn double(v: Vec2) Rect {
+        return Rect{ v[0], v[1], v[0], v[1] };
     }
 };
 
-const v = Vec;
+pub const rect = struct {
+    pub fn top(rectangle: Rect) i32 {
+        return rectangle[1];
+    }
+
+    pub fn left(rectangle: Rect) i32 {
+        return rectangle[0];
+    }
+
+    pub fn top_left(rectangle: Rect) Vec2 {
+        return .{ rectangle[0], rectangle[1] };
+    }
+
+    pub fn right(rectangle: Rect) i32 {
+        return rectangle[2];
+    }
+
+    pub fn bottom(rectangle: Rect) i32 {
+        return rectangle[3];
+    }
+
+    pub fn bottom_right(rectangle: Rect) Vec2 {
+        return .{ rectangle[2], rectangle[3] };
+    }
+
+    pub fn size(rectangle: Rect) Vec2 {
+        return .{ rectangle[2] - rectangle[0], rectangle[3] - rectangle[1] };
+    }
+
+    pub fn contains(rectangle: Rect, vector: Vec2) bool {
+        return @reduce(.And, top_left(rectangle) < vector) and @reduce(.And, bottom_right(rectangle) > vector);
+    }
+
+    pub fn shift(rectangle: Rect, vector: Vec2) Rect {
+        return rectangle + vec.double(vector);
+    }
+};
 
 pub const Dir = struct {
     pub const up = Vec2{ 0, -1 };
@@ -57,13 +93,13 @@ pub fn distancef(a: Vec2f, b: Vec2f) f32 {
     return lengthf(subbed);
 }
 
-pub fn lengthf(vec: Vec2f) f32 {
-    var squared = vec * vec;
+pub fn lengthf(vector: Vec2f) f32 {
+    var squared = vector * vector;
     return @sqrt(@reduce(.Add, squared));
 }
 
-pub fn normalizef(vec: Vec2f) Vec2f {
-    return vec / @splat(2, lengthf(vec));
+pub fn normalizef(vector: Vec2f) Vec2f {
+    return vector / @splat(2, lengthf(vector));
 }
 
 pub fn vec2ToVec2f(vec2: Vec2) Vec2f {
@@ -79,19 +115,19 @@ pub const AABB = struct {
     size: Vec2,
 
     pub fn top(this: @This()) i32 {
-        return this.pos[v.y];
+        return this.pos[vec.y];
     }
     pub fn left(this: @This()) i32 {
-        return this.pos[v.x];
+        return this.pos[vec.x];
     }
     pub fn top_left(this: @This()) Vec2 {
         return this.pos;
     }
     pub fn right(this: @This()) i32 {
-        return this.pos[v.x] + this.size[v.x];
+        return this.pos[vec.x] + this.size[vec.x];
     }
     pub fn bottom(this: @This()) i32 {
-        return this.pos[v.y] + this.size[v.y];
+        return this.pos[vec.y] + this.size[vec.y];
     }
     pub fn bottom_right(this: @This()) Vec2 {
         return this.pos + this.size;
@@ -115,11 +151,11 @@ pub const AABB = struct {
         return @This(){ .pos = this.pos + vec2, .size = this.size };
     }
 
-    pub fn contains(this: @This(), vec: Vec2) bool {
+    pub fn contains(this: @This(), vector: Vec2) bool {
         const tl = this.top_left();
         const br = this.bottom_right();
-        return tl[v.x] < vec[v.x] and br[v.x] > vec[v.x] and
-            tl[v.y] < vec[v.y] and br[v.y] > vec[v.y];
+        return tl[vec.x] < vector[vec.x] and br[vec.x] > vector[vec.x] and
+            tl[vec.y] < vector[vec.y] and br[vec.y] > vector[vec.y];
     }
 
     pub fn overlaps(a: @This(), b: @This()) bool {

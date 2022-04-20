@@ -2,7 +2,7 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
 
-const geom = zow4.geometry;
+const g = zow4.geometry;
 const color = zow4.draw.color;
 const input = zow4.input;
 const ui = zow4.ui;
@@ -19,9 +19,9 @@ var stage: usize = undefined;
 var wm_handle: usize = undefined;
 var float: usize = undefined;
 
-const Grab = struct { handle: usize, diff: geom.Vec2 };
+const Grab = struct { moved: bool, handle: usize, diff: g.Vec2 };
 var grabbed: ?Grab = null;
-var grab_point: ?geom.Vec2 = null;
+var grab_point: ?g.Vec2 = null;
 
 ////////////////////
 // Event Handlers //
@@ -36,8 +36,9 @@ fn float_release(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
 fn float_pressed(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Node {
     const pos = event.pointer.pos;
     if (node.layout == .Anchor) {
-        const diff = pos - ui.top_left(node.layout.Anchor.margin);
+        const diff = pos - g.rect.top_left(node.layout.Anchor.margin);
         grabbed = .{
+            .moved = false,
             .handle = node.handle,
             .diff = diff,
         };
@@ -118,8 +119,7 @@ pub const App = struct {
         float = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }).minSize(.{120, 120}));
         try ctx.listen(float, .PointerPress, float_pressed);
         try ctx.listen(float, .PointerRelease, float_release);
-        // try ctx.listen(float, .PointerClick, float_hide);
-        // try ctx.listen(float, .PointerMove, float_drag);
+        try ctx.listen(float, .PointerClick, float_hide);
 
         var vdiv = try ctx.insert(float, Node.vdiv().hasBackground(true).capturePointer(true));
         {
@@ -148,7 +148,6 @@ pub const App = struct {
         try ctx.listen(float2, .PointerPress, float_pressed);
         try ctx.listen(float2, .PointerRelease, float_release);
         // try ctx.listen(float2, .PointerClick, float_hide);
-        // try ctx.listen(float2, .PointerMove, float_drag);
 
         var vlist = try ctx.insert(float2, Node.vlist().hasBackground(true).capturePointer(true));
         _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
@@ -187,7 +186,8 @@ pub const App = struct {
                 var new_node = node;
                 const pos = input.mousepos() - grab.diff;
                 const size = node.min_size;
-                new_node.layout.Anchor.margin = geom.Rect{ pos[0], pos[1], pos[0] + size[0], pos[1] + size[1] };
+                new_node.pointer_state = .Hover;
+                new_node.layout.Anchor.margin = g.Rect{ pos[0], pos[1], pos[0] + size[0], pos[1] + size[1] };
                 _ = this.ctx.set_node(new_node);
             }
         }
