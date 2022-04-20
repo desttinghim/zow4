@@ -35,31 +35,16 @@ fn float_release(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
 
 fn float_pressed(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Node {
     const pos = event.pointer.pos;
-    const diff = pos - ui.top_left(node.bounds);
-    grabbed = .{
-        .handle = node.handle,
-        .diff = diff,
-    };
-    app.ctx.bring_to_front(node.handle);
+    if (node.layout == .Anchor) {
+        const diff = pos - ui.top_left(node.layout.Anchor.margin);
+        grabbed = .{
+            .handle = node.handle,
+            .diff = diff,
+        };
+        app.ctx.bring_to_front(node.handle);
+    }
     return null;
 }
-
-// fn float_drag(node: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
-//     if (grabbed) |grab| {
-//         var new_node = node;
-//         if (grab.handle == node.handle) {
-//             // Reset the pointer state
-//             new_node.pointer_state = .Open;
-//             return new_node;
-//         }
-//     }
-//     return null;
-// }
-
-// fn float_delete(el: *ui.Element, _: ui.EventData) bool {
-//     el.remove();
-//     return false;
-// }
 
 fn float_hide(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
     w4.trace("show");
@@ -130,7 +115,7 @@ pub const App = struct {
         var btn3 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Toggle" }).capturePointer(true));
         try ctx.listen(btn3, .PointerClick, float_toggle);
 
-        float = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }));
+        float = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }).minSize(.{120, 120}));
         try ctx.listen(float, .PointerPress, float_pressed);
         try ctx.listen(float, .PointerRelease, float_release);
         // try ctx.listen(float, .PointerClick, float_hide);
@@ -159,7 +144,7 @@ pub const App = struct {
             _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
         }
 
-        var float2 = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 20, 20, 140, 140 }));
+        var float2 = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 20, 20, 140, 140 }).minSize(.{120, 120}));
         try ctx.listen(float2, .PointerPress, float_pressed);
         try ctx.listen(float2, .PointerRelease, float_release);
         // try ctx.listen(float2, .PointerClick, float_hide);
@@ -172,7 +157,7 @@ pub const App = struct {
         _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
 
         try ctx.layout(.{ 0, 0, 160, 160 });
-        ctx.print_debug(log);
+        // ctx.print_debug(log);
         return @This(){.ctx =  ctx};
     }
 
@@ -180,15 +165,6 @@ pub const App = struct {
         w4.DRAW_COLORS.* = 0x04;
         zow4.draw.cubic_bezier(.{ 0, 0 }, .{ 160, 0 }, .{ 0, 160 }, .{ 160, 160 });
         zow4.draw.quadratic_bezier(.{ 0, 0 }, .{ 320, 80 }, .{ 0, 160 });
-
-        if (grabbed) |grab| {
-            if (this.ctx.get_node(grab.handle)) |*node| {
-                const pos = input.mousepos() - grab.diff;
-                const size = ui.rect_size(node.bounds);
-                node.bounds = geom.Rect{ pos[0], pos[1], pos[0] + size[0], pos[1] + size[1] };
-                _ = this.ctx.set_node(node.*);
-            }
-        }
         this.ctx.update(.{
             .pointer = .{
                 .left = input.mouse(.left),
@@ -205,12 +181,22 @@ pub const App = struct {
                 .reject = input.btn(.one, .z),
             },
         });
-        const modified = this.ctx.modified != null;
-        try this.ctx.layout(.{ 0, 0, 160, 160 });
-        if (modified and this.ctx.modified == null) {
-            w4.trace("");
-            this.ctx.print_debug(log);
+
+        if (grabbed) |grab| {
+            if (this.ctx.get_node(grab.handle)) |node| {
+                var new_node = node;
+                const pos = input.mousepos() - grab.diff;
+                const size = node.min_size;
+                new_node.layout.Anchor.margin = geom.Rect{ pos[0], pos[1], pos[0] + size[0], pos[1] + size[1] };
+                _ = this.ctx.set_node(new_node);
+            }
         }
+        // const modified = this.ctx.modified != null;
+        try this.ctx.layout(.{ 0, 0, 160, 160 });
+        // if (modified and this.ctx.modified == null) {
+        //     w4.trace("");
+        //     this.ctx.print_debug(log);
+        // }
         this.ctx.paint();
         input.update();
     }

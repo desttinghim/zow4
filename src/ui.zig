@@ -110,8 +110,20 @@ pub const Layout = union(enum) {
 /// Provide your basic types
 pub fn Context(comptime T: type) type {
     return struct {
+        modified: bool,
+        reorder: ?Reorder,
+        inputs_last: InputData = .{
+            .pointer = .{ .pos = Vec{ 0, 0 }, .left = false, .right = false, .middle = false },
+            .keys = .{
+                .up = false,
+                .left = false,
+                .right = false,
+                .down = false,
+                .accept = false,
+                .reject = false,
+            },
+        },
         pointer_pos: Vec = Vec{ 0, 0 },
-        modified: ?Modification,
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
         root_layout: Layout = .Fill,
@@ -125,9 +137,9 @@ pub fn Context(comptime T: type) type {
         paintFn: PaintFn,
         sizeFn: SizeFn,
 
-        const Modification = union(enum) {
-            Element,
-            Init,
+        // Reorder operations that can take significant processing time, so
+        // wait until we are doing layout to begin
+        const Reorder = union(enum) {
             BringToFront: usize,
         };
 
@@ -248,12 +260,19 @@ pub fn Context(comptime T: type) type {
                 node.data = value;
                 return node;
             }
+
+            pub fn minSize(this: @This(), value: Vec) @This() {
+                var node = this;
+                node.min_size = value;
+                return node;
+            }
         };
 
         pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
             return @This(){
                 .alloc = alloc,
-                .modified = .Init,
+                .reorder = null,
+                .modified = true,
                 .handle_count = 0,
                 .nodes = ArrayList(Node).init(alloc),
                 .listeners = ArrayList(Listener).init(alloc),
@@ -299,7 +318,7 @@ pub fn Context(comptime T: type) type {
 
         /// Create a new node under given parent. Pass null to create a top level element.
         pub fn insert(this: *@This(), parent_opt: ?usize, node: Node) !usize {
-            this.modified = .Element;
+            this.modified = true;
             const handle = this.handle_count;
             this.handle_count += 1;
             var index: usize = undefined;
@@ -371,7 +390,7 @@ pub fn Context(comptime T: type) type {
                 if (listener.handle == node.handle and event._type == listener.event) {
                     if (listener.callback(node, event)) |new_node| {
                         this.nodes.items[index] = new_node;
-                        this.modified = .Element;
+                        this.modified = true;
                     }
                 }
             }
@@ -382,7 +401,7 @@ pub fn Context(comptime T: type) type {
                     if (listener.handle == parent.handle and event._type == listener.event) {
                         if (listener.callback(parent, event)) |new_node| {
                             this.nodes.items[parent_index] = new_node;
-                            this.modified = .Element;
+                            this.modified = true;
                         }
                     }
                 }
@@ -411,8 +430,6 @@ pub fn Context(comptime T: type) type {
                         continue;
                     }
                     if (rect_contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !mouse_captured) {
-                        // const default = @import("ui/default.zig");
-                        // default.print_debug(node);
                         this.nodes.items[i].pointer_over = true;
                         this.nodes.items[i].pointer_pressed = inputs.pointer.left;
                         if (node.event_filter == .Prevent) {
@@ -432,12 +449,12 @@ pub fn Context(comptime T: type) type {
                             event_data._type = .PointerMove;
                             this.dispatch_raw(i, event_data);
                         }
-                        if (node.pointer_pressed and !inputs.pointer.left) {
+                        if (this.inputs_last.pointer.left and !inputs.pointer.left) {
                             event_data._type = .PointerRelease;
                             this.dispatch_raw(i, event_data);
                             mouse_released = true;
                         }
-                        if (!node.pointer_pressed and inputs.pointer.left) {
+                        if (!this.inputs_last.pointer.left and inputs.pointer.left) {
                             event_data._type = .PointerPress;
                             this.dispatch_raw(i, event_data);
                             mouse_pressed = true;
@@ -474,6 +491,7 @@ pub fn Context(comptime T: type) type {
             for (this.nodes.items) |node, i| {
                 this.nodes.items[i] = this.updateFn(node);
             }
+            this.inputs_last = inputs;
         }
 
         pub fn paint(this: *@This()) void {
@@ -499,8 +517,11 @@ pub fn Context(comptime T: type) type {
         pub fn layout(this: *@This(), screen: Rect) !void {
             // Nothing to layout
             if (this.nodes.items.len == 0) return;
-            if (this.modified) |modification| {
-                try this.reorder(modification);
+            // If nothing has been modified, we don't need to proceed
+            if (!this.modified) return;
+            // Perform reorder operation if one was queued
+            if (this.reorder) |reorder_op| {
+                try this.run_reorder(reorder_op);
             }
 
             // Layout top level
@@ -566,13 +587,13 @@ pub fn Context(comptime T: type) type {
                     const _left = bounds[0];
                     const _top = bounds[1] + vlist_data.top;
                     this.nodes.items[child_index].bounds = Rect{ _left, _top, bounds[2], _top + child.min_size[1] };
-                    return .{ .VList = .{ .top = _top + child.min_size[1] } };
+                    return .{ .VList = .{ .top = vlist_data.top + child.min_size[1] } };
                 },
                 .HList => |hlist_data| {
                     const _left = bounds[0] + hlist_data.left;
                     const _top = bounds[1];
                     this.nodes.items[child_index].bounds = Rect{ _left, _top, _left + child.min_size[0], bounds[3] };
-                    return .{ .HList = .{ .left = _left + child.min_size[0] } };
+                    return .{ .HList = .{ .left = hlist_data.left + child.min_size[0] } };
                 },
                 .VDiv => {
                     const vsize = @divTrunc(rect_size(bounds)[1], @intCast(i32, child_count));
@@ -698,7 +719,7 @@ pub fn Context(comptime T: type) type {
         pub fn set_node(this: *@This(), node: Node) bool {
             if (this.get_index_by_handle(node.handle)) |i| {
                 this.nodes.items[i] = node;
-                this.modified = .Element;
+                this.modified = true;
                 return true;
             }
             return false;
@@ -743,23 +764,20 @@ pub fn Context(comptime T: type) type {
                 if (i + node.children >= id) return i;
                 if (i == 0) break;
             }
-            //
             return null;
         }
 
         /// Prepare to move a node and all it's children to the front of it's parent.
         pub fn bring_to_front(this: *@This(), handle: usize) void {
-            this.modified = .{ .BringToFront = handle };
+            this.modified = true;
+            this.reorder = .{ .BringToFront = handle };
         }
 
-        fn reorder(this: *@This(), modification: Modification) !void {
-            switch (modification) {
-                .Init, .Element => {
-                    this.modified = null;
-                },
+        fn run_reorder(this: *@This(), reorder_op: Reorder) !void {
+            switch (reorder_op) {
                 .BringToFront => |handle| {
                     const id = this.get_index_by_handle(handle) orelse {
-                        this.modified = null;
+                        this.reorder = null;
                         return;
                     };
                     std.debug.assert(id < this.nodes.items.len);
@@ -782,7 +800,7 @@ pub fn Context(comptime T: type) type {
                     // Insert elements in new order
                     try this.nodes.replaceRange(id, rest.len, rest);
                     try this.nodes.replaceRange(id + rest.len, node_and_children.len, node_and_children);
-                    this.modified = null;
+                    this.reorder = null;
                 },
             }
         }
