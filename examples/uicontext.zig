@@ -2,6 +2,7 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
 const input = zow4.input;
+const geom = zow4.geometry;
 
 var app: App = undefined;
 
@@ -24,7 +25,7 @@ export fn update() void {
     };
 }
 
-fn drag_handler(node: ui.default.Node, event: zow4.ui.context.EventData) ?ui.default.Node {
+fn drag_handler(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Node {
     if (node.handle != app.wm_handle) return null;
     const margin = node.layout.Anchor.margin;
     switch (event._type) {
@@ -42,15 +43,15 @@ fn toggle_window(_: ui.default.Node, _: ui.EventData) ?ui.default.Node {
     return null;
 }
 
-const ui = zow4.ui.context;
+const ui = zow4.ui;
 const Node = ui.default.Node;
 const App = struct {
-    ui: ui.default.DefaultUIContext,
+    ui: ui.default.Context,
     fba: std.heap.FixedBufferAllocator,
     alloc: std.mem.Allocator,
 
     wm_handle: usize,
-    grab: ?struct { handle: usize, vec: ui.Vec } = null,
+    grab: ?struct { handle: usize, vec: geom.Vec2 } = null,
 
     fn init() !@This() {
         // Initialize dynamic memory
@@ -58,7 +59,7 @@ const App = struct {
         var alloc = fba.allocator();
 
         var this = @This(){
-            .ui = ui.default.DefaultUI.init(alloc),
+            .ui = ui.default.init(alloc),
             .fba = fba,
             .alloc = alloc,
             .wm_handle = undefined,
@@ -119,7 +120,7 @@ const App = struct {
                 const margin = &node.layout.Anchor.margin;
                 const topleft = mouse_pos - grab.vec;
                 const bottomright = topleft + ui.rect_size(margin.*);
-                margin.* = ui.Rect{ topleft[0], topleft[1], bottomright[0], bottomright[1] };
+                margin.* = geom.Rect{ topleft[0], topleft[1], bottomright[0], bottomright[1] };
                 if (!this.ui.set_node(node)) {
                     w4.trace("couldn't set node");
                 }

@@ -1,12 +1,22 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const draw = @import("../draw.zig");
+const geom = @import("../geometry.zig");
 const text = @import("../text.zig");
-const ui = @import("context.zig");
-const UIContext = @import("context.zig").UIContext;
+const ui = @import("../ui.zig");
 
-pub const DefaultUIContext = UIContext(DefaultUI);
-pub const Node = DefaultUIContext.Node;
+pub const Context = ui.Context(DefaultUI);
+pub const Node = Context.Node;
+
+pub fn init(alloc: std.mem.Allocator) Context {
+    return Context.init(alloc, DefaultUI.size, DefaultUI.update, DefaultUI.paint);
+}
+
+pub fn print_debug(this: Node) void {
+    const typename: [*:0]const u8 = @tagName(this.layout);
+    const dataname: [*:0]const u8 = if (this.data) |data| @tagName(data) else "null";
+    w4.tracef("type %s, data %s, children %d", typename, dataname, this.children);
+}
 
 /// A simple default UI
 pub const DefaultUI = union(enum) {
@@ -17,11 +27,7 @@ pub const DefaultUI = union(enum) {
     /// Button
     Button: []const u8,
 
-    pub fn init(alloc: std.mem.Allocator) DefaultUIContext {
-        return DefaultUIContext.init(alloc, size, update, paint);
-    }
-
-    pub fn size(this: @This()) ui.Vec {
+    pub fn size(this: @This()) geom.Vec2 {
         switch (this) {
             .Label => |label| {
                 const label_size = text.text_size(label);
