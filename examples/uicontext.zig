@@ -43,6 +43,7 @@ fn toggle_window(_: ui.default.Node, _: ui.EventData) ?ui.default.Node {
 }
 
 const ui = zow4.ui.context;
+const Node = ui.default.Node;
 const App = struct {
     ui: ui.default.DefaultUIContext,
     fba: std.heap.FixedBufferAllocator,
@@ -69,41 +70,24 @@ const App = struct {
             .layout = .Relative,
         });
 
-        this.wm_handle = try this.ui.insert(null, .{
-            .capture_pointer = false,
-            .event_filter = .Pass,
-            .layout = .{
-                .Anchor = .{
-                    .anchor = .{ 0, 0, 0, 0 },
-                    .margin = .{ 0, 0, 80, 80 },
-                },
-            },
-        });
+        this.wm_handle = try this.ui.insert(null, Node.anchor(
+            .{ 0, 0, 0, 0 },
+            .{ 0, 0, 80, 80 },
+        ).eventFilter(.Pass));
+
         try this.ui.listen(this.wm_handle, .PointerPress, drag_handler);
-        const window = try this.ui.insert(this.wm_handle, .{
-            .capture_pointer = true,
-            .layout = .{ .Anchor = .{
-                .anchor = .{ 0, 0, 100, 100 },
-                .margin = .{ 2, 2, 2, 2 },
-            } },
-            .has_background = true,
-        });
+        const window = try this.ui.insert(this.wm_handle, Node.anchor(.{ 0, 0, 100, 100 }, .{ 2, 2, 2, 2 })
+            .capturePointer(true)
+            .hasBackground(true));
 
-        const vlist = try this.ui.insert(relative, .{ .layout = .{ .VList = .{} } });
+        const vlist = try this.ui.insert(relative, Node.vlist());
 
-        const button = try this.ui.insert(vlist, .{
-            .capture_pointer = true,
-            .data = .{
-                .Button = "uicontext",
-            },
-        });
+        const button = try this.ui.insert(vlist, Node.relative()
+            .capturePointer(true)
+            .dataValue(.{ .Button = "uicontext" }));
         try this.ui.listen(button, .PointerClick, toggle_window);
 
-        _ = try this.ui.insert(window, .{
-            .data = .{
-                .Label = "uicontext",
-            },
-        });
+        _ = try this.ui.insert(window, Node.relative().dataValue(.{ .Label = "uicontext" }));
 
         this.ui.layout(.{ 0, 0, 160, 160 });
 
@@ -113,7 +97,6 @@ const App = struct {
     fn update(this: *@This()) !void {
         _ = this;
         const mouse_pos = input.mousepos();
-        // w4.tracef("%d, %d", mouse_pos[0], mouse_pos[1]);
         this.ui.update(.{
             .pointer = .{
                 .left = input.mouse(.left),

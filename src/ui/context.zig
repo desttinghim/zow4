@@ -137,7 +137,7 @@ pub fn UIContext(comptime T: type) type {
             /// If the node recieves pointer events
             capture_pointer: bool = false,
             /// If the node prevents other nodes from recieving events
-            event_filter: enum { Prevent, Pass } = .Prevent,
+            event_filter: EventFilter = .Prevent,
             /// Whether the pointer is over the node
             pointer_over: bool = false,
             /// If the pointer is pressed over the node
@@ -157,10 +157,65 @@ pub fn UIContext(comptime T: type) type {
             /// User specified type
             data: ?T = null,
 
+            const EventFilter = enum { Prevent, Pass };
+
             fn print_debug(this: @This()) void {
                 const typename: [*:0]const u8 = @tagName(this.layout);
                 const dataname: [*:0]const u8 = if (this.data) |data| @tagName(data) else "null";
                 w4.tracef("type %s, data %s, children %d", typename, dataname, this.children);
+            }
+
+            pub fn anchor(_anchor: Rect, margin: Rect) @This() {
+                return @This(){
+                    .layout = .{
+                        .Anchor = .{
+                            .anchor = _anchor,
+                            .margin = margin,
+                        },
+                    },
+                };
+            }
+
+            pub fn fill() @This() {
+                return @This(){
+                    .layout = .Fill,
+                };
+            }
+
+            pub fn relative() @This() {
+                return @This(){
+                    .layout = .Relative,
+                };
+            }
+
+            pub fn vlist() @This() {
+                return @This(){
+                    .layout = .{.VList = .{}},
+                };
+            }
+
+            pub fn capturePointer(this: @This(), value: bool) @This() {
+                var node = this;
+                node.capture_pointer = value;
+                return node;
+            }
+
+            pub fn eventFilter(this: @This(), value: EventFilter) @This() {
+                var node = this;
+                node.event_filter = value;
+                return node;
+            }
+
+            pub fn hasBackground(this: @This(), value: bool) @This() {
+                var node = this;
+                node.has_background = value;
+                return node;
+            }
+
+            pub fn dataValue(this: @This(), value: T) @This() {
+                var node = this;
+                node.data = value;
+                return node;
             }
         };
 
