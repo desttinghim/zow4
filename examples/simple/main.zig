@@ -236,13 +236,13 @@ fn float_pressed(node: Node, event: zow4.ui.EventData) ?Node {
             .handle = node.handle,
             .diff = diff,
         };
-        zow_os.window_manager.ctx.bring_to_front(node.handle) catch zow4.panic("rearranging");
+        zow_os.window_manager.ctx.bring_to_front(node.handle);
     }
     return null;
 }
 
 fn float_hide(_: Node, _: zow4.ui.EventData) ?Node {
-    zow_os.window_manager.ctx.remove(float) catch zow4.panic("removing");
+    zow_os.window_manager.ctx.remove(float);
     // _ = zow_os.window_manager.ctx.hide_node(float);
     return null;
 }

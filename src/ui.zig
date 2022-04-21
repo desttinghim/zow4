@@ -92,7 +92,7 @@ pub fn Context(comptime T: type) type {
         /// Array of listeners
         listeners: ArrayList(Listener),
         /// Array of reorder operations to perform
-        reorderops: ArrayList(Reorder),
+        reorder_op: ?Reorder,
         alloc: std.mem.Allocator,
 
         // User defined functions
@@ -233,14 +233,14 @@ pub fn Context(comptime T: type) type {
             }
         };
 
-        pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) !@This() {
+        pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
             return @This(){
                 .alloc = alloc,
                 .modified = true,
                 .handle_count = 0,
                 .nodes = ArrayList(Node).init(alloc),
                 .listeners = ArrayList(Listener).init(alloc),
-                .reorderops = try ArrayList(Reorder).initCapacity(alloc, 1),
+                .reorder_op = null,
                 .sizeFn = sizeFn,
                 .updateFn = updateFn,
                 .paintFn = paintFn,
@@ -248,13 +248,21 @@ pub fn Context(comptime T: type) type {
         }
 
         pub fn print_list(this: @This(), print: fn ([]const u8) void) !void {
-            const header = try std.fmt.allocPrint(this.alloc, "{s:^16}|{s:^16}|{s:^8}|{s:^8}", .{ "layout", "datatype", "children", "hidden" });
+            const header = try std.fmt.allocPrint(
+                this.alloc,
+                "{s:^16}|{s:^16}|{s:^8}|{s:^8}",
+                .{ "layout", "datatype", "children", "hidden" },
+            );
             defer this.alloc.free(header);
             print(header);
             for (this.nodes.items) |node| {
                 const typename: [*:0]const u8 = @tagName(node.layout);
                 const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
-                const log = try std.fmt.allocPrint(this.alloc, "{s:<16}|{s:^16}|{:^8}|{:^8}", .{ typename, dataname, node.children, node.hidden });
+                const log = try std.fmt.allocPrint(
+                    this.alloc,
+                    "{s:<16}|{s:^16}|{:^8}|{:^8}",
+                    .{ typename, dataname, node.children, node.hidden },
+                );
                 defer this.alloc.free(log);
                 print(log);
             }
@@ -272,7 +280,11 @@ pub fn Context(comptime T: type) type {
             const typename: [*:0]const u8 = @tagName(node.layout);
             const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
             const depth_as_bits = @as(u8, 1) << @intCast(u3, depth);
-            const log = std.fmt.allocPrint(this.alloc, "{b:>8}\t{:>16}|{s:<16}|{s:^16}|{:^8}|{:^8}", .{ depth_as_bits, node.handle, typename, dataname, node.children, node.hidden }) catch @panic("yeah");
+            const log = std.fmt.allocPrint(
+                this.alloc,
+                "{b:>8}\t{:>16}|{s:<16}|{s:^16}|{:^8}|{:^8}",
+                .{ depth_as_bits, node.handle, typename, dataname, node.children, node.hidden },
+            ) catch @panic("yeah");
             defer this.alloc.free(log);
             print(log);
             var child_iter = this.get_child_iter(index);
@@ -350,6 +362,7 @@ pub fn Context(comptime T: type) type {
         }
 
         fn dispatch_raw(this: *@This(), index: usize, event: EventData) void {
+            // TODO: Account for user reordering requests.
             const node = this.nodes.items[index];
             for (this.listeners.items) |listener| {
                 if (listener.handle == node.handle and event._type == listener.event) {
@@ -493,7 +506,7 @@ pub fn Context(comptime T: type) type {
             // If nothing has been modified, we don't need to proceed
             if (!this.modified) return;
             // Perform reorder operation if one was queued
-            if (this.reorderops.items.len > 0) {
+            if (this.reorder_op != null) {
                 this.reorder();
             }
 
@@ -748,22 +761,29 @@ pub fn Context(comptime T: type) type {
         ///////////////////////////
 
         /// Prepare to move a nodetree to the front of it's parent
-        pub fn bring_to_front(this: *@This(), handle: usize) !void {
+        pub fn bring_to_front(this: *@This(), handle: usize) void {
             this.modified = true;
-            try this.reorderops.append(.{ .BringToFront = handle });
+            if (this.reorder_op != null) {
+                this.reorder();
+            }
+            this.reorder_op = .{ .BringToFront = handle };
         }
 
         /// Queue a nodetree for removal
-        pub fn remove(this: *@This(), handle: usize) !void {
+        pub fn remove(this: *@This(), handle: usize) void {
             this.modified = true;
-            try this.reorderops.append(.{ .Remove = handle });
+            if (this.reorder_op != null) {
+                this.reorder();
+            }
+            this.reorder_op = .{ .Remove = handle };
         }
 
         /// Empty reorder list
         fn reorder(this: *@This()) void {
-            while (this.reorderops.popOrNull()) |op| {
+            if (this.reorder_op) |op| {
                 this.run_reorder(op);
             }
+            this.reorder_op = null;
         }
 
         fn run_reorder(this: *@This(), reorder_op: Reorder) void {
@@ -788,7 +808,7 @@ pub fn Context(comptime T: type) type {
                     }
 
                     // Remove unneeded slots
-                    this.nodes.shrinkAndFree(index + rest_slice.len);
+                    this.nodes.shrinkRetainingCapacity(index + rest_slice.len);
                 },
                 .BringToFront => |handle| {
                     const index = this.get_index_by_handle(handle) orelse return;
