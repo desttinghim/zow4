@@ -19,6 +19,12 @@ pub const ui = struct {
 };
 
 const std = @import("std");
+const w4 = @import("wasm4");
+
+pub fn panic(message: []const u8) noreturn {
+    w4.tracef("TERMINATING %s", message.ptr);
+    @panic(message);
+}
 
 pub fn update(ui_ctx: *ui.default.Context) !void {
     ui_ctx.update(.{

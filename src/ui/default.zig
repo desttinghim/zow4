@@ -8,7 +8,7 @@ const ui = @import("../ui.zig");
 pub const Context = ui.Context(DefaultUI);
 pub const Node = Context.Node;
 
-pub fn init(alloc: std.mem.Allocator) Context {
+pub fn init(alloc: std.mem.Allocator) !Context {
     return Context.init(alloc, DefaultUI.size, DefaultUI.update, DefaultUI.paint);
 }
 

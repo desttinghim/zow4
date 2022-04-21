@@ -153,6 +153,7 @@ pub const rect = struct {
             @reduce(.And, bottom_right(rectangle) >= vector);
     }
 
+    // TODO: Verify that this does what I want
     pub fn overlaps(rect1: Rect, rect2: Rect) bool {
         return @reduce(
             .And,
@@ -262,7 +263,7 @@ pub const aabb = struct {
         return initv(pos(box) - vec2, size(box));
     }
 
-    /// Converts the AABBf into a Rect
+    /// Converts the AABBf into a Rectf
     pub fn as_rectf(box: AABBf) Rectf {
         return Rectf{ box[0], box[1], box[0] + box[2], box[0] + box[3] };
     }

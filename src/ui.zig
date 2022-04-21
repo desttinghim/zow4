@@ -233,14 +233,14 @@ pub fn Context(comptime T: type) type {
             }
         };
 
-        pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
+        pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) !@This() {
             return @This(){
                 .alloc = alloc,
                 .modified = true,
                 .handle_count = 0,
                 .nodes = ArrayList(Node).init(alloc),
                 .listeners = ArrayList(Listener).init(alloc),
-                .reorderops = ArrayList(Reorder).init(alloc),
+                .reorderops = try ArrayList(Reorder).initCapacity(alloc, 1),
                 .sizeFn = sizeFn,
                 .updateFn = updateFn,
                 .paintFn = paintFn,
@@ -487,14 +487,14 @@ pub fn Context(comptime T: type) type {
         }
 
         /// Layout
-        pub fn layout(this: *@This(), screen: Rect) !void {
+        pub fn layout(this: *@This(), screen: Rect) void {
             // Nothing to layout
             if (this.nodes.items.len == 0) return;
             // If nothing has been modified, we don't need to proceed
             if (!this.modified) return;
             // Perform reorder operation if one was queued
             if (this.reorderops.items.len > 0) {
-                try this.reorder();
+                this.reorder();
             }
 
             // Layout top level
@@ -760,13 +760,13 @@ pub fn Context(comptime T: type) type {
         }
 
         /// Empty reorder list
-        fn reorder(this: *@This()) !void {
+        fn reorder(this: *@This()) void {
             while (this.reorderops.popOrNull()) |op| {
-                try this.run_reorder(op);
+                this.run_reorder(op);
             }
         }
 
-        fn run_reorder(this: *@This(), reorder_op: Reorder) !void {
+        fn run_reorder(this: *@This(), reorder_op: Reorder) void {
             switch (reorder_op) {
                 .Remove => |handle| {
                     // Get the node
@@ -778,12 +778,7 @@ pub fn Context(comptime T: type) type {
                     const rest_slice = this.nodes.items[index + node.children + 1 ..];
 
                     // Move all elements back by the length of node.children
-                    for (rest_slice) |rest_node, i| {
-                        this.nodes.items[index + i] = rest_node;
-                    }
-
-                    // Remove unneeded slots
-                    try this.nodes.resize(index + rest_slice.len);
+                    std.mem.copy(Node, this.nodes.items[index .. index + rest_slice.len], rest_slice);
 
                     // Remove children count from parents
                     var parent_iter = this.get_parent_iter(index);
@@ -791,30 +786,26 @@ pub fn Context(comptime T: type) type {
                         std.debug.assert(this.nodes.items[parent].children > node.children);
                         this.nodes.items[parent].children -= count;
                     }
+
+                    // Remove unneeded slots
+                    this.nodes.shrinkAndFree(index + rest_slice.len);
                 },
                 .BringToFront => |handle| {
-                    const id = this.get_index_by_handle(handle) orelse return;
+                    const index = this.get_index_by_handle(handle) orelse return;
+                    // Do nothing, the node is already at the front
+                    if (index == this.nodes.items.len - 1) return;
 
-                    std.debug.assert(id < this.nodes.items.len);
-                    if (id == this.nodes.items.len - 1) {
-                        // Do nothing, the node is already at the front
-                        return;
-                    }
-                    // Copy the array so we can shift things around
-                    const nodes = try this.nodes.clone();
-                    defer nodes.deinit();
-                    const node = nodes.items[id];
+                    const node = this.nodes.items[index];
+                    const slice = slice: {
+                        if (this.get_parent(index)) |parent_index| {
+                            const parent = this.nodes.items[parent_index];
+                            break :slice this.nodes.items[index .. parent_index + parent.children + 1];
+                        } else {
+                            break :slice this.nodes.items[index..];
+                        }
+                    };
 
-                    // Grab slice containing the node and its children
-                    const node_and_children = nodes.items[id .. id + node.children];
-
-                    const parent_id = this.get_parent(id).?;
-                    const parent = nodes.items[parent_id];
-                    const rest = nodes.items[id + node.children + 1 .. parent_id + parent.children + 1];
-
-                    // Insert elements in new order
-                    try this.nodes.replaceRange(id, rest.len, rest);
-                    try this.nodes.replaceRange(id + rest.len, node_and_children.len, node_and_children);
+                    std.mem.rotate(Node, slice, node.children + 1);
                 },
             }
         }
