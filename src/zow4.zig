@@ -26,24 +26,3 @@ pub fn panic(message: []const u8) noreturn {
     @panic(message);
 }
 
-pub fn update(ui_ctx: *ui.default.Context) !void {
-    ui_ctx.update(.{
-        .pointer = .{
-            .left = input.mouse(.left),
-            .right = input.mouse(.right),
-            .middle = input.mouse(.middle),
-            .pos = input.mousepos(),
-        },
-        .keys = .{
-            .up = input.btn(.one, .up),
-            .down = input.btn(.one, .down),
-            .left = input.btn(.one, .left),
-            .right = input.btn(.one, .right),
-            .accept = input.btn(.one, .x),
-            .reject = input.btn(.one, .z),
-        },
-    });
-    try ui_ctx.layout(.{ 0, 0, 160, 160 });
-    ui_ctx.paint();
-    input.update();
-}

@@ -4,12 +4,35 @@ const draw = @import("../draw.zig");
 const g = @import("../geometry.zig");
 const text = @import("../text.zig");
 const ui = @import("../ui.zig");
+const input = @import("../input.zig");
 
 pub const Context = ui.Context(DefaultUI);
 pub const Node = Context.Node;
 
 pub fn init(alloc: std.mem.Allocator) Context {
     return Context.init(alloc, DefaultUI.size, DefaultUI.update, DefaultUI.paint);
+}
+
+pub fn update(ui_ctx: *Context) void {
+    ui_ctx.update(.{
+        .pointer = .{
+            .left = input.mouse(.left),
+            .right = input.mouse(.right),
+            .middle = input.mouse(.middle),
+            .pos = input.mousepos(),
+        },
+        .keys = .{
+            .up = input.btn(.one, .up),
+            .down = input.btn(.one, .down),
+            .left = input.btn(.one, .left),
+            .right = input.btn(.one, .right),
+            .accept = input.btn(.one, .x),
+            .reject = input.btn(.one, .z),
+        },
+    });
+    ui_ctx.layout(.{ 0, 0, 160, 160 });
+    ui_ctx.paint();
+    input.update();
 }
 
 pub fn print_debug(this: Node) void {

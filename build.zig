@@ -85,10 +85,10 @@ pub fn build(b: *std.build.Builder) !void {
 
     try tests(b, mode);
 
-    const example = try addWasm4Cart(b, "cart", "examples/simple/main.zig");
-    example.addPackage(pkgs.zow4);
-    try addWasm4RunStep(b, "run-example", example);
-    const example_opt = try addWasmOpt(b, "example", example);
+    const zowOS = try addWasm4Cart(b, "zowOS", "examples/zow-os/main.zig");
+    zowOS.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-zowOS", zowOS);
+    const zowOS_opt = try addWasmOpt(b, "zowOS", zowOS);
 
     const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
     counter.addPackage(pkgs.zow4);
@@ -100,16 +100,10 @@ pub fn build(b: *std.build.Builder) !void {
     try addWasm4RunStep(b, "run-bezier", bezier);
     const bezier_opt = try addWasmOpt(b, "bezier", bezier);
 
-    const uicontext = try addWasm4Cart(b, "uicontext", "examples/uicontext.zig");
-    uicontext.addPackage(pkgs.zow4);
-    try addWasm4RunStep(b, "run-uicontext", uicontext);
-    const uicontext_opt = try addWasmOpt(b, "uicontext", uicontext);
-
     const optimize_step = b.step("opt", "Builds example carts and optimizes them with wasm-opt (must be installed)");
-    optimize_step.dependOn(example_opt);
+    optimize_step.dependOn(zowOS_opt);
     optimize_step.dependOn(counter_opt);
     optimize_step.dependOn(bezier_opt);
-    optimize_step.dependOn(uicontext_opt);
     if (mode == .ReleaseSmall) {
         b.getInstallStep().dependOn(optimize_step);
         try optimize_step.make();

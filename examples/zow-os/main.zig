@@ -32,7 +32,6 @@ export fn start() void {
     };
 }
 
-
 export fn update() void {
     zow_os.update() catch |e| {
         zow4.heap.report_memory_usage(zow_os.fba);
@@ -129,7 +128,8 @@ pub const WindowManager = struct {
         try ctx.listen(float2, .PointerRelease, float_release);
         // try ctx.listen(float2, .PointerClick, float_hide);
 
-        var vlist = try ctx.insert(float2, Node.vlist().hasBackground(true).capturePointer(true));
+        var padding = try ctx.insert(float2, Node.anchor(.{ 0, 0, 100, 100 }, .{ 2, 2, -2, -2 }));
+        var vlist = try ctx.insert(padding, Node.vlist().hasBackground(true).capturePointer(true));
         _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
         _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = elsize }));
         _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Image = &bubbles }));
