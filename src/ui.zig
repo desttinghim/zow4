@@ -556,10 +556,10 @@ pub fn Context(comptime T: type) type {
                 .Center => {
                     const min_half = @divTrunc(child.min_size, Vec{ 2, 2 });
                     const center = @divTrunc(g.rect.size(bounds), Vec{ 2, 2 });
-                    const pos = center - min_half;
+                    const pos = g.rect.top_left(bounds) + center - min_half;
                     // Layout top level
                     this.nodes.items[child_index].bounds = Rect{ pos[0], pos[1], pos[0] + child.min_size[0], pos[1] + child.min_size[1] };
-                    return .Relative;
+                    return .Center;
                 },
                 .Anchor => |anchor_data| {
                     const MAX = g.vec.double(.{ 100, 100 });

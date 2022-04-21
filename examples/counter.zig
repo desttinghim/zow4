@@ -41,13 +41,14 @@ export fn start() void {
 }
 
 fn init() !void {
-    fba = zow4.heap.init();
+    fba = zow4.mem.init();
     alloc = fba.allocator();
 
     ctx = ui.default.init(alloc);
 
     var vdiv = try ctx.insert(null, Node.vdiv());
 
+    // Spacer
     _ = try ctx.insert(vdiv, .{});
 
     {
@@ -57,9 +58,9 @@ fn init() !void {
         const btn_decrement = try ctx.insert(center_dec, Node.relative().dataValue(.{ .Button = "-" }).capturePointer(true));
         try ctx.listen(btn_decrement, .PointerClick, decrement);
 
-        const center_lbl = try ctx.insert(hdiv, Node.center());
         counter = 0;
         counter_text = try std.fmt.allocPrint(alloc, "{}", .{counter});
+        const center_lbl = try ctx.insert(hdiv, Node.center());
         counter_handle = try ctx.insert(center_lbl, Node.relative().dataValue(.{ .Label = counter_text }));
 
         const center_inc = try ctx.insert(hdiv, Node.center());
@@ -67,9 +68,10 @@ fn init() !void {
         try ctx.listen(btn_increment, .PointerClick, increment);
     }
 
+    // Spcer
     _ = try ctx.insert(vdiv, .{});
 
-    try ctx.layout(.{ 0, 0, 160, 160 });
+    ctx.layout(.{ 0, 0, 160, 160 });
 }
 
 export fn update() void {
@@ -93,7 +95,7 @@ fn _update() !void {
             .reject = input.btn(.one, .z),
         },
     });
-    try ctx.layout(.{ 0, 0, 160, 160 });
+    ctx.layout(.{ 0, 0, 160, 160 });
     ctx.paint();
     input.update();
 }

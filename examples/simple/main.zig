@@ -79,7 +79,7 @@ pub const WindowManager = struct {
     menubar: usize,
     // fn show_start(_: Node, _: EventData) ?Node {}
     fn init(alloc: std.mem.Allocator) !@This() {
-        var ctx = try ui.default.init(alloc);
+        var ctx = ui.default.init(alloc);
 
         var wm = try ctx.insert(null, Node.fill());
 

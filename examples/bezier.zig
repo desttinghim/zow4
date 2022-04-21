@@ -1,22 +1,24 @@
 const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
+
 const draw = zow4.draw;
 const geom = zow4.geometry;
 const input = zow4.input;
 const ui = zow4.ui;
 
-const Stage = zow4.ui.Stage;
+const Context = zow4.ui.default.Context;
+
 //////////////////////
 // Global Variables //
 //////////////////////
 
 var fba: std.heap.FixedBufferAllocator = undefined;
 var allocator: std.mem.Allocator = undefined;
-var stage: *Stage = undefined;
-var canvas: *ui.Element = undefined;
+var stage: Context = undefined;
+var canvas: usize = undefined;
 
-var grabbed: ?*ui.Element = null;
+var grabbed: ?usize = null;
 var grab_point: ?geom.Vec2 = null;
 var edit_data: EditData = .{ .points = .Zero, .link = null };
 var paths: PathRenderer = undefined;
@@ -30,7 +32,7 @@ export fn start() void {
 }
 
 fn real_start() !void {
-    fba = zow4.heap.init();
+    fba = zow4.mem.init();
     allocator = fba.allocator();
 
     stage = try Stage.init(allocator);
