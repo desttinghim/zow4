@@ -72,7 +72,6 @@ pub const Layout = union(enum) {
 pub fn Context(comptime T: type) type {
     return struct {
         modified: bool,
-        reorder: ?Reorder,
         inputs_last: InputData = .{
             .pointer = .{ .pos = Vec{ 0, 0 }, .left = false, .right = false, .middle = false },
             .keys = .{
@@ -90,7 +89,10 @@ pub fn Context(comptime T: type) type {
         root_layout: Layout = .Fill,
         /// Array of all ui elements
         nodes: ArrayList(Node),
+        /// Array of listeners
         listeners: ArrayList(Listener),
+        /// Array of reorder operations to perform
+        reorderops: ArrayList(Reorder),
         alloc: std.mem.Allocator,
 
         // User defined functions
@@ -101,6 +103,8 @@ pub fn Context(comptime T: type) type {
         // Reorder operations that can take significant processing time, so
         // wait until we are doing layout to begin
         const Reorder = union(enum) {
+            // Insert: usize,
+            Remove: usize,
             BringToFront: usize,
         };
 
@@ -232,11 +236,11 @@ pub fn Context(comptime T: type) type {
         pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
             return @This(){
                 .alloc = alloc,
-                .reorder = null,
                 .modified = true,
                 .handle_count = 0,
                 .nodes = ArrayList(Node).init(alloc),
                 .listeners = ArrayList(Listener).init(alloc),
+                .reorderops = ArrayList(Reorder).init(alloc),
                 .sizeFn = sizeFn,
                 .updateFn = updateFn,
                 .paintFn = paintFn,
@@ -489,8 +493,8 @@ pub fn Context(comptime T: type) type {
             // If nothing has been modified, we don't need to proceed
             if (!this.modified) return;
             // Perform reorder operation if one was queued
-            if (this.reorder) |reorder_op| {
-                try this.run_reorder(reorder_op);
+            if (this.reorderops.items.len > 0) {
+                try this.reorder();
             }
 
             // Layout top level
@@ -508,6 +512,9 @@ pub fn Context(comptime T: type) type {
             const node = this.nodes.items[index];
             if (node.layout == .VList) {
                 this.nodes.items[index].layout.VList.top = 0;
+            }
+            if (node.layout == .HList) {
+                this.nodes.items[index].layout.HList.left = 0;
             }
             var childIter = this.get_child_iter(index);
             const child_count = this.get_child_count(index);
@@ -736,19 +743,58 @@ pub fn Context(comptime T: type) type {
             return null;
         }
 
-        /// Prepare to move a node and all it's children to the front of it's parent.
-        pub fn bring_to_front(this: *@This(), handle: usize) void {
+        ///////////////////////////
+        // Reordering Operations //
+        ///////////////////////////
+
+        /// Prepare to move a nodetree to the front of it's parent
+        pub fn bring_to_front(this: *@This(), handle: usize) !void {
             this.modified = true;
-            this.reorder = .{ .BringToFront = handle };
+            try this.reorderops.append(.{ .BringToFront = handle });
+        }
+
+        /// Queue a nodetree for removal
+        pub fn remove(this: *@This(), handle: usize) !void {
+            this.modified = true;
+            try this.reorderops.append(.{ .Remove = handle });
+        }
+
+        /// Empty reorder list
+        fn reorder(this: *@This()) !void {
+            while (this.reorderops.popOrNull()) |op| {
+                try this.run_reorder(op);
+            }
         }
 
         fn run_reorder(this: *@This(), reorder_op: Reorder) !void {
             switch (reorder_op) {
+                .Remove => |handle| {
+                    // Get the node
+                    const index = this.get_index_by_handle(handle) orelse return;
+                    const node = this.nodes.items[index];
+                    const count = node.children + 1;
+
+                    // Get slice of children and rest
+                    const rest_slice = this.nodes.items[index + node.children + 1 ..];
+
+                    // Move all elements back by the length of node.children
+                    for (rest_slice) |rest_node, i| {
+                        this.nodes.items[index + i] = rest_node;
+                    }
+
+                    // Remove unneeded slots
+                    try this.nodes.resize(index + rest_slice.len);
+
+                    // Remove children count from parents
+                    var parent_iter = this.get_parent_iter(index);
+                    while (parent_iter.next()) |parent| {
+                        std.debug.assert(this.nodes.items[parent].children > node.children);
+                        this.nodes.items[parent].children -= count;
+                    }
+                },
                 .BringToFront => |handle| {
-                    const id = this.get_index_by_handle(handle) orelse {
-                        this.reorder = null;
-                        return;
-                    };
+                    const id = this.get_index_by_handle(handle) orelse return;
+
                     std.debug.assert(id < this.nodes.items.len);
                     if (id == this.nodes.items.len - 1) {
                         // Do nothing, the node is already at the front
@@ -769,7 +815,6 @@ pub fn Context(comptime T: type) type {
                     // Insert elements in new order
                     try this.nodes.replaceRange(id, rest.len, rest);
                     try this.nodes.replaceRange(id + rest.len, node_and_children.len, node_and_children);
-                    this.reorder = null;
                 },
             }
         }

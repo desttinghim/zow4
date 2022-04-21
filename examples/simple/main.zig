@@ -2,11 +2,12 @@ const std = @import("std");
 const w4 = @import("wasm4");
 const zow4 = @import("zow4");
 
-const g = zow4.geometry;
-const color = zow4.draw.color;
 const input = zow4.input;
 const ui = zow4.ui;
-const Context = zow4.ui.default.Context;
+const g = zow4.geometry;
+
+const Context = ui.default.Context;
+const EventData = ui.EventData;
 const Node = Context.Node;
 
 const bubbles_bmp = zow4.draw.load_bitmap(@embedFile("bubbles.bmp")) catch |e| @compileLog("Could not load bitmap", e);
@@ -27,13 +28,13 @@ var grab_point: ?g.Vec2 = null;
 // Event Handlers //
 ////////////////////
 
-fn float_release(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
+fn float_release(_: Node, _: zow4.ui.EventData) ?Node {
     grabbed = null;
     grab_point = null;
     return null;
 }
 
-fn float_pressed(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.Node {
+fn float_pressed(node: Node, event: zow4.ui.EventData) ?Node {
     const pos = event.pointer.pos;
     if (node.layout == .Anchor) {
         const diff = pos - g.rect.top_left(node.layout.Anchor.margin);
@@ -42,33 +43,31 @@ fn float_pressed(node: ui.default.Node, event: zow4.ui.EventData) ?ui.default.No
             .handle = node.handle,
             .diff = diff,
         };
-        app.ctx.bring_to_front(node.handle);
+        window_manager.ctx.bring_to_front(node.handle) catch @panic("rearrange");
     }
     return null;
 }
 
-fn float_hide(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
-    w4.trace("show");
-    _ = app.ctx.hide_node(float);
+fn float_hide(_: Node, _: zow4.ui.EventData) ?Node {
+    window_manager.ctx.remove(float) catch @panic("removing");
+    // _ = window_manager.ctx.hide_node(float);
     return null;
 }
 
-fn float_show(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
-    w4.trace("hide");
-    _ = app.ctx.show_node(float);
+fn float_show(_: Node, _: zow4.ui.EventData) ?Node {
+    _ = window_manager.ctx.show_node(float);
     return null;
 }
 
-fn float_toggle(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
-    w4.trace("toggle");
-    _ = app.ctx.toggle_hidden(float);
+fn float_toggle(_: Node, _: zow4.ui.EventData) ?Node {
+    _ = window_manager.ctx.toggle_hidden(float);
     return null;
 }
 
-var app: App = undefined;
+var window_manager: WindowManager = undefined;
 
 export fn start() void {
-    app = App.start() catch |e| {
+    window_manager = WindowManager.start() catch |e| {
         switch (e) {
             error.OutOfMemory => {
                 w4.trace("Out of Memory!");
@@ -79,7 +78,7 @@ export fn start() void {
 }
 
 export fn update() void {
-    app.update() catch |e| {
+    window_manager.update() catch |e| {
         switch (e) {
             error.OutOfMemory => {
                 w4.trace("Out of Memory!");
@@ -93,28 +92,62 @@ fn log (text: []const u8) void {
     w4.traceUtf8(text.ptr, text.len);
 }
 
-pub const App = struct {
-    ctx: Context = undefined,
+pub const Window = struct {
+    window: usize,
+    canvas: usize,
+    // Close event handler
+    fn close(node: Node, event: EventData) Node {
+        std.debug.assert(event == .PointerClick);
+        window_manager.ctx.remove(node.handle) catch @panic("removing element");
+        return null;
+    }
+    pub fn init(box: g.AABB) @This() {
+        const anchor_topleft = g.Rect{0,0,0,0};
+        var win = try window_manager.ctx.insert(window_manager.handle, Node.anchor(anchor_topleft, g.aabb.as_rect(box)).minSize(g.aabb.size(box)));
+        var vlist = try window_manager.ctx.insert(win, Node.vlist());
+        var menubar = try window_manager.ctx.insert(win, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, 10 }).minSize(.{32, 10}).hasBackground(true));
+        _ = try window_manager.ctx.insert(menubar, Node.relative.dataValue(.{.Button = "X"}).capturePointer(true).eventFilter(.Pass));
+        var canvas = try window_manager.ctx.insert(vlist, Node.fill().capturePointer(true).eventFilter(.Prevent));
+
+        //
+        try window_manager.ctx.listen(win, .PointerPress, float_pressed);
+        try window_manager.ctx.listen(win, .PointerRelease, float_release);
+        try window_manager.ctx.listen(win, .PointerClick, close);
+
+        return .{.window = win, .canvas = canvas};
+    }
+    fn insert(this: @This(), node: Node) !usize {
+        // Add an element to the window
+        try window_manager.ctx.insert(this.canvas, node);
+    }
+};
+
+pub const WindowManager = struct {
+    ctx: Context,
+    handle: usize,
+    menubar: usize,
+    fn show_start(_: Node, _: EventData) ?Node {
+    }
     fn start() !@This() {
         fba = zow4.heap.init();
         alloc = fba.allocator();
 
         var ctx = ui.default.init(alloc);
 
-        wm_handle = try ctx.insert(null, Node.fill());
+        var wm = try ctx.insert(null, Node.fill());
 
         var menubar = try ctx.insert(null, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, 16 }));
 
-        var hdiv = try ctx.insert(menubar, Node.hdiv().hasBackground(true));
+        var menu_div = try ctx.insert(menubar, Node.hlist().hasBackground(true));
 
-        var btn1 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Show" }).capturePointer(true));
+        var btn1 = try ctx.insert(menu_div, Node.relative().dataValue(.{ .Button = "\x81" }).capturePointer(true));
         try ctx.listen(btn1, .PointerClick, float_show);
 
-        var btn2 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Hide" }).capturePointer(true));
-        try ctx.listen(btn2, .PointerClick, float_hide);
+        // var btn2 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Hide" }).capturePointer(true));
+        // try ctx.listen(btn2, .PointerClick, float_hide);
 
-        var btn3 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Toggle" }).capturePointer(true));
-        try ctx.listen(btn3, .PointerClick, float_toggle);
+        // var btn3 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Toggle" }).capturePointer(true));
+        // try ctx.listen(btn3, .PointerClick, float_toggle);
 
         float = try ctx.insert(wm_handle, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }).minSize(.{120, 120}));
         try ctx.listen(float, .PointerPress, float_pressed);
@@ -156,8 +189,16 @@ pub const App = struct {
         _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
 
         try ctx.layout(.{ 0, 0, 160, 160 });
-        // ctx.print_debug(log);
-        return @This(){.ctx =  ctx};
+
+
+        var this = @This(){
+            .ctx = ctx,
+            .handle = wm,
+            .menubar = menubar,
+        };
+
+
+        return this;
     }
 
     fn update(this: *@This()) !void {
