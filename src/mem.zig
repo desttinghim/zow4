@@ -20,15 +20,15 @@ fn get_memory_usage(comptime T: type, count: usize) usize {
     return @truncate(usize, @divTrunc(permyriad(count * size,MEM), 100));
 }
 
-fn percentage(amount: usize, total: usize) usize {
+pub fn percentage(amount: usize, total: usize) usize {
    return @divTrunc(amount * 100, total);
 }
 
-fn perthousands(amount: usize, total: usize) usize {
+pub fn perthousands(amount: usize, total: usize) usize {
     return @divTrunc(amount * 1000, total);
 }
 
-fn permyriad(amount: usize, total: usize) u64 {
+pub fn permyriad(amount: usize, total: usize) u64 {
     return @divTrunc(@intCast(u64, amount) * 10_000, @intCast(u64, total));
 }
 

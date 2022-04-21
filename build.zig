@@ -66,7 +66,7 @@ pub fn addWasm4Cart(b: *std.build.Builder, name: []const u8, path: []const u8) !
     lib.stack_size = 14752;
 
     // Export WASM-4 symbols
-    // lib.export_symbol_names = &[_][]const u8{ "start", "update" };
+    lib.export_symbol_names = &[_][]const u8{ "start", "update" };
 
     lib.install();
 

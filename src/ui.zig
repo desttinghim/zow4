@@ -3,11 +3,79 @@
 //! zig std library.
 
 const std = @import("std");
-const ArrayList = std.ArrayList;
 
 const g = @import("geometry.zig");
 const Vec = g.Vec2;
 const Rect = g.Rect;
+
+const Allocator = std.mem.Allocator;
+
+/// Mimics the array list api, but operates on a fixed slice that is passed in
+fn SliceList(comptime T: type) type {
+    return struct {
+        items: []T,
+        capacity: []T,
+
+        pub fn init(buffer: []u8) @This() {
+            const start = std.mem.alignPointer(buffer.ptr, @alignOf(T)).?; //orelse return error.OutOfMemory;
+            const ptr = @ptrCast([*]T, @alignCast(@alignOf(T), start));
+            const items = ptr[0..1];
+            return @This(){
+                .items = items,
+                .capacity = ptr[0..@divTrunc(buffer.len, @alignOf(T))],
+            };
+        }
+
+        /// Insert `item` at index `n`. Moves `list[n .. list.len]`
+        /// to higher indices to make room.
+        /// This operation is O(N).
+        pub fn insert(this: *@This(), n: usize, item: T) Allocator.Error!void {
+            if (this.items.len >= this.capacity.len) return error.OutOfMemory;
+            this.items.len += 1;
+
+            std.mem.copyBackwards(T, this.items[n + 1 .. this.items.len], this.items[n .. this.items.len - 1]);
+            this.items[n] = item;
+        }
+
+        /// Extend the list by 1 element.
+        pub fn append(this: *@This(), item: T) Allocator.Error!void {
+            if (this.items.len >= this.capacity.len) return error.OutOfMemory;
+            this.items.len += 1;
+            this.items[this.items.len - 1] = item;
+        }
+
+        /// Removes the element at the specified index and returns it.
+        /// The empty slot is filled from the end of the list.
+        /// Invalidates pointers to last element.
+        /// This operation is O(1).
+        pub fn swapRemove(this: *@This(), i: usize) T {
+            if (this.items.len - 1 == i) return this.pop();
+
+            const old_item = this.items[i];
+            this.items[i] = this.pop();
+            return old_item;
+        }
+
+        /// Remove and return the last element from the list.
+        /// Asserts the list has at least one item.
+        /// Invalidates pointers to last element.
+        pub fn pop(this: *@This()) T {
+            const val = this.items[this.items.len - 1];
+            this.items.len -= 1;
+            return val;
+        }
+
+        /// Reduce length to `new_len`.
+        /// Invalidates pointers to elements `items[new_len..]`.
+        /// Keeps capacity the same.
+        pub fn shrinkRetainingCapacity(this: *@This(), new_len: usize) void {
+            std.debug.assert(new_len <= this.items.len);
+            this.items.len = new_len;
+        }
+    };
+}
+
+const List = std.ArrayList;
 
 pub const Event = enum {
     PointerMove,
@@ -88,12 +156,11 @@ pub fn Context(comptime T: type) type {
         handle_count: usize,
         root_layout: Layout = .Fill,
         /// Array of all ui elements
-        nodes: ArrayList(Node),
+        nodes: List(Node),
         /// Array of listeners
-        listeners: ArrayList(Listener),
+        listeners: List(Listener),
         /// Array of reorder operations to perform
         reorder_op: ?Reorder,
-        alloc: std.mem.Allocator,
 
         // User defined functions
         updateFn: UpdateFn,
@@ -147,7 +214,7 @@ pub fn Context(comptime T: type) type {
             /// User specified type
             data: ?T = null,
 
-            const EventFilter = enum { Prevent, Pass };
+            const EventFilter = union(enum) { Prevent, Pass, PassExcept: Event };
 
             pub fn anchor(_anchor: Rect, margin: Rect) @This() {
                 return @This(){
@@ -233,13 +300,14 @@ pub fn Context(comptime T: type) type {
             }
         };
 
-        pub fn init(alloc: std.mem.Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) @This() {
+        pub fn init(alloc: Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) !@This() {
+            var listenerlist = try List(Listener).initCapacity(alloc, 20);
+            var nodelist = try List(Node).initCapacity(alloc, 20);
             return @This(){
-                .alloc = alloc,
                 .modified = true,
-                .handle_count = 0,
-                .nodes = ArrayList(Node).init(alloc),
-                .listeners = ArrayList(Listener).init(alloc),
+                .handle_count = 100,
+                .nodes = nodelist,
+                .listeners = listenerlist,
                 .reorder_op = null,
                 .sizeFn = sizeFn,
                 .updateFn = updateFn,
@@ -247,9 +315,9 @@ pub fn Context(comptime T: type) type {
             };
         }
 
-        pub fn print_list(this: @This(), print: fn ([]const u8) void) !void {
+        pub fn print_list(this: @This(), alloc: Allocator, print: fn ([]const u8) void) !void {
             const header = try std.fmt.allocPrint(
-                this.alloc,
+                alloc,
                 "{s:^16}|{s:^16}|{s:^8}|{s:^8}",
                 .{ "layout", "datatype", "children", "hidden" },
             );
@@ -372,9 +440,15 @@ pub fn Context(comptime T: type) type {
                     }
                 }
             }
+            switch (node.event_filter) {
+                .Pass => {},
+                .PassExcept => |except| if (except == event._type) return,
+                .Prevent => return,
+            }
             var parent_iter = this.get_parent_iter(index);
             while (parent_iter.next()) |parent_index| {
                 const parent = this.nodes.items[parent_index];
+                // TODO: filter here as well
                 for (this.listeners.items) |listener| {
                     if (listener.handle == parent.handle and event._type == listener.event) {
                         if (listener.callback(parent, event)) |new_node| {
@@ -510,6 +584,13 @@ pub fn Context(comptime T: type) type {
                 this.reorder();
             }
 
+            if (this.root_layout == .VList) {
+                this.root_layout.VList.top = 0;
+            }
+            if (this.root_layout == .HList) {
+                this.root_layout.HList.left = 0;
+            }
+
             // Layout top level
             var childIter = this.get_root_iter();
             const child_count = this.get_root_child_count();
@@ -604,7 +685,7 @@ pub fn Context(comptime T: type) type {
             index: usize,
             end: usize,
             pub fn next(this: *@This()) ?usize {
-                if (this.index > this.end or this.index > this.nodes.len) return null;
+                if (this.index > this.end or this.index >= this.nodes.len) return null;
                 const index = this.index;
                 const node = this.nodes[this.index];
                 this.index += node.children + 1;

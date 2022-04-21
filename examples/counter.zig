@@ -1,5 +1,6 @@
 const std = @import("std");
 const zow4 = @import("zow4");
+const w4 = @import("wasm4");
 
 const input = zow4.input;
 const ui = zow4.ui;
@@ -18,7 +19,7 @@ fn update_label() void {
     if (ctx.get_node(counter_handle)) |node| {
         var new_node = node;
         alloc.free(counter_text);
-        counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch @panic("formatting string");
+        counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch zow4.panic("formatting string");
         new_node.data.?.Label = counter_text;
         _ = ctx.set_node(new_node);
     }
@@ -37,14 +38,22 @@ fn decrement(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
 }
 
 export fn start() void {
-    init() catch @panic("eh");
+    init() catch |e| {
+        zow4.mem.report_memory_usage(fba);
+        switch (e) {
+            error.OutOfMemory => w4.trace("OOM"),
+        }
+        zow4.panic("eh");
+    };
 }
 
+const KB = 1024;
+var heap: [40 * KB]u8 = undefined;
 fn init() !void {
-    fba = zow4.mem.init();
+    fba = std.heap.FixedBufferAllocator.init(&heap);
     alloc = fba.allocator();
 
-    ctx = ui.default.init(alloc);
+    ctx = try ui.default.init(alloc);
 
     var vdiv = try ctx.insert(null, Node.vdiv());
 
@@ -75,7 +84,7 @@ fn init() !void {
 }
 
 export fn update() void {
-    _update() catch @panic("update");
+    _update() catch zow4.panic("update");
 }
 
 fn _update() !void {

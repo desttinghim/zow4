@@ -22,35 +22,46 @@ var grab_point: ?g.Vec2 = null;
 var zow_os: ZowOS = undefined;
 
 export fn start() void {
-    zow_os = ZowOS.start() catch |e| {
+    zow_os = ZowOS.init() catch |e| {
+        zow4.mem.report_memory_usage(zow_os.fba);
+        switch (e) {
+            error.OutOfMemory => {
+                w4.trace("[INIT] Out of Memory!");
+            },
+        }
+        zow4.panic("Encountered an error");
+    };
+    w4.trace("Booted");
+    zow_os.start() catch |e| {
+        zow4.mem.report_memory_usage(zow_os.fba);
         switch (e) {
             error.OutOfMemory => {
                 w4.trace("[START] Out of Memory!");
             },
         }
-        zow4.panic("Encountered an error");
+        // zow4.panic("Encountered an error");
     };
 }
 
 export fn update() void {
     zow_os.update() catch |e| {
-        zow4.heap.report_memory_usage(zow_os.fba);
+        zow4.mem.report_memory_usage(zow_os.fba);
         switch (e) {
             error.OutOfMemory => {
                 w4.trace("[UPDATE] Out of Memory!");
             },
         }
-        zow_os.fba.reset();
+        // zow_os.fba.reset();
     };
 }
 
 const KB = 1024;
-var heap: [44 * KB]u8 = undefined;
+var heap: [40 * KB]u8 = undefined;
 pub const ZowOS = struct {
     fba: std.heap.FixedBufferAllocator,
     alloc: std.mem.Allocator,
     window_manager: WindowManager,
-    pub fn start() !@This() {
+    pub fn init() !@This() {
         var fba = std.heap.FixedBufferAllocator.init(&heap);
         var alloc = fba.allocator();
 
@@ -61,6 +72,11 @@ pub const ZowOS = struct {
             .alloc = alloc,
             .window_manager = window_manager,
         };
+    }
+
+    pub fn start(this: *@This()) !void {
+        _ = this;
+        _ = try Window.init(&this.window_manager, .{ 20, 20, 40, 40 });
     }
 
     pub fn update(this: *@This()) !void {
@@ -78,16 +94,22 @@ pub const WindowManager = struct {
     menubar: usize,
     // fn show_start(_: Node, _: EventData) ?Node {}
     fn init(alloc: std.mem.Allocator) !@This() {
-        var ctx = ui.default.init(alloc);
+        var ctx = try ui.default.init(alloc);
 
         var wm = try ctx.insert(null, Node.fill());
 
         var menubar = try ctx.insert(null, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, 16 }));
 
-        var menu_div = try ctx.insert(menubar, Node.hlist().hasBackground(true));
+        var this = @This(){
+            .ctx = ctx,
+            .handle = wm,
+            .menubar = menubar,
+        };
 
-        var btn1 = try ctx.insert(menu_div, Node.relative().dataValue(.{ .Button = "\x81" }).capturePointer(true));
-        try ctx.listen(btn1, .PointerClick, float_show);
+        var menu_div = try this.ctx.insert(menubar, Node.hlist().hasBackground(true));
+
+        var btn1 = try this.ctx.insert(menu_div, Node.relative().dataValue(.{ .Button = "\x81" }).capturePointer(true));
+        try this.ctx.listen(btn1, .PointerClick, float_show);
 
         // var btn2 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Hide" }).capturePointer(true));
         // try ctx.listen(btn2, .PointerClick, float_hide);
@@ -95,53 +117,47 @@ pub const WindowManager = struct {
         // var btn3 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Toggle" }).capturePointer(true));
         // try ctx.listen(btn3, .PointerClick, float_toggle);
 
-        float = try ctx.insert(wm, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }).minSize(.{ 120, 120 }));
-        try ctx.listen(float, .PointerPress, float_pressed);
-        try ctx.listen(float, .PointerRelease, float_release);
-        try ctx.listen(float, .PointerClick, float_hide);
+        // float = try ctx.insert(wm, Node.anchor(.{ 0, 0, 0, 0 }, .{ 32, 32, 152, 152 }).minSize(.{ 120, 120 }));
+        // try ctx.listen(float, .PointerPress, float_pressed);
+        // try ctx.listen(float, .PointerRelease, float_release);
+        // try ctx.listen(float, .PointerClick, float_hide);
 
-        var vdiv = try ctx.insert(float, Node.vdiv().hasBackground(true).capturePointer(true));
-        {
-            var center = try ctx.insert(vdiv, Node.center());
-            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
-        }
+        // var vdiv = try ctx.insert(float, Node.vdiv().hasBackground(true).capturePointer(true));
+        // {
+        //     var center = try ctx.insert(vdiv, Node.center());
+        //     _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
+        // }
 
-        const elsize = std.fmt.comptimePrint("{}", .{@sizeOf(Node)});
-        {
-            var center = try ctx.insert(vdiv, Node.center());
-            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = elsize }));
-        }
+        // const elsize = std.fmt.comptimePrint("{}", .{@sizeOf(Node)});
+        // {
+        //     var center = try ctx.insert(vdiv, Node.center());
+        //     _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = elsize }));
+        // }
 
-        {
-            var center = try ctx.insert(vdiv, Node.center());
-            bubbles = zow4.draw.Blit{ .style = 0x0004, .bmp = &bubbles_bmp };
-            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Image = &bubbles }));
-        }
+        // {
+        //     var center = try ctx.insert(vdiv, Node.center());
+        //     bubbles = zow4.draw.Blit{ .style = 0x0004, .bmp = &bubbles_bmp };
+        //     _ = try ctx.insert(center, Node.relative().dataValue(.{ .Image = &bubbles }));
+        // }
 
-        {
-            var center = try ctx.insert(vdiv, Node.center());
-            _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
-        }
+        // {
+        //     var center = try ctx.insert(vdiv, Node.center());
+        //     _ = try ctx.insert(center, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
+        // }
 
-        var float2 = try ctx.insert(wm, Node.anchor(.{ 0, 0, 0, 0 }, .{ 20, 20, 140, 140 }).minSize(.{ 120, 120 }));
-        try ctx.listen(float2, .PointerPress, float_pressed);
-        try ctx.listen(float2, .PointerRelease, float_release);
-        // try ctx.listen(float2, .PointerClick, float_hide);
+        // var float2 = try ctx.insert(wm, Node.anchor(.{ 0, 0, 0, 0 }, .{ 20, 20, 140, 140 }).minSize(.{ 120, 120 }));
+        // try ctx.listen(float2, .PointerPress, float_pressed);
+        // try ctx.listen(float2, .PointerRelease, float_release);
+        // // try ctx.listen(float2, .PointerClick, float_hide);
 
-        var padding = try ctx.insert(float2, Node.anchor(.{ 0, 0, 100, 100 }, .{ 2, 2, -2, -2 }));
-        var vlist = try ctx.insert(padding, Node.vlist().hasBackground(true).capturePointer(true));
-        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
-        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = elsize }));
-        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Image = &bubbles }));
-        _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
+        // var padding = try ctx.insert(float2, Node.anchor(.{ 0, 0, 100, 100 }, .{ 2, 2, -2, -2 }));
+        // var vlist = try ctx.insert(padding, Node.vlist().hasBackground(true).capturePointer(true));
+        // _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Click to Hide" }));
+        // _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = elsize }));
+        // _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Image = &bubbles }));
+        // _ = try ctx.insert(vlist, Node.relative().dataValue(.{ .Label = "Drag to Move" }));
 
-        ctx.layout(.{ 0, 0, 160, 160 });
-
-        var this = @This(){
-            .ctx = ctx,
-            .handle = wm,
-            .menubar = menubar,
-        };
+        this.ctx.layout(.{ 0, 0, 160, 160 });
 
         return this;
     }
@@ -178,12 +194,14 @@ pub const WindowManager = struct {
             }
         }
         // const modified = this.ctx.modified != null;
-        this.ctx.layout(.{ 0, 0, 160, 160 });
+        // this.ctx.layout(.{ 0, 0, 160, 160 });
         // if (modified and this.ctx.modified == null) {
         //     w4.trace("");
         //     this.ctx.print_debug(log);
         // }
+        this.ctx.layout(.{ 0, 0, 160, 160 });
         this.ctx.paint();
+
         input.update();
     }
 };
@@ -192,24 +210,24 @@ pub const Window = struct {
     window: usize,
     canvas: usize,
     // Close event handler
-    fn close(node: Node, event: EventData) Node {
-        std.debug.assert(event == .PointerClick);
-        zow_os.window_manager.ctx.remove(node.handle) catch zow4.panic("removing element");
+    fn close(node: Node, event: EventData) ?Node {
+        std.debug.assert(event._type == .PointerClick);
+        zow_os.window_manager.ctx.remove(node.handle);
         return null;
     }
-    pub fn init(box: g.AABB) @This() {
-        const anchor_topleft = g.Rect{ 0, 0, 0, 0 };
-        var win = try zow_os.window_manager.ctx.insert(zow_os.window_manager.handle, Node.anchor(anchor_topleft, g.aabb.as_rect(box)).minSize(g.aabb.size(box)));
-        var vlist = try zow_os.window_manager.ctx.insert(win, Node.vlist());
-        var menubar = try zow_os.window_manager.ctx.insert(win, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, 10 }).minSize(.{ 32, 10 }).hasBackground(true));
-        _ = try zow_os.window_manager.ctx.insert(menubar, Node.relative.dataValue(.{ .Button = "X" }).capturePointer(true).eventFilter(.Pass));
-        var canvas = try zow_os.window_manager.ctx.insert(vlist, Node.fill().capturePointer(true).eventFilter(.Prevent));
+    pub fn init(wm: *WindowManager, box: g.AABB) !@This() {
+        var win = try wm.ctx.insert(wm.handle, Node.anchor(.{ 0, 0, 0, 0 }, g.aabb.as_rect(box)).minSize(g.aabb.size(box)));
+        var vlist = try wm.ctx.insert(win, Node.vlist().hasBackground(true));
+        const barsize = 14;
+        var dragbar = try wm.ctx.insert(win, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, barsize }).minSize(.{ 32, barsize }).hasBackground(true).capturePointer(true).eventFilter(.{.PassExcept = .PointerClick}));
+        var menubar = try wm.ctx.insert(dragbar, Node.hlist().minSize(.{ 32, barsize }).hasBackground(true));
+        _ = try wm.ctx.insert(menubar, Node.relative().dataValue(.{ .Button = "X" }).capturePointer(true).eventFilter(.Pass));
+        var canvas = try wm.ctx.insert(vlist, Node.fill().capturePointer(true).eventFilter(.Prevent));
 
-        try zow_os.window_manager.ctx.listen(win, .PointerPress, float_pressed);
-        try zow_os.window_manager.ctx.listen(win, .PointerRelease, float_release);
-        try zow_os.window_manager.ctx.listen(win, .PointerClick, close);
-
-        return .{ .window = win, .canvas = canvas };
+        try wm.ctx.listen(win, .PointerPress, float_pressed);
+        try wm.ctx.listen(win, .PointerRelease, float_release);
+        try wm.ctx.listen(win, .PointerClick, close);
+        return @This(){ .window = win, .canvas = canvas };
     }
     fn insert(this: @This(), node: Node) !usize {
         // Add an element to the window

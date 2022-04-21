@@ -31,11 +31,12 @@ export fn start() void {
     real_start() catch @panic("failed to start");
 }
 
+var ui_buffer: [32 * 1024]u8 = undefined;
 fn real_start() !void {
     fba = zow4.mem.init();
     allocator = fba.allocator();
 
-    ctx = zow4.ui.default.init(allocator);
+    ctx = try zow4.ui.default.init(allocator);
 
     canvas = try ctx.insert(null, Node.anchor(.{ 0, 0, 100, 100 }, .{ 0, 0, 0, 0 }).capturePointer(true));
     try ctx.listen(canvas, .PointerClick, canvas_clicked);
