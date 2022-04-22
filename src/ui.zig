@@ -152,6 +152,7 @@ pub fn Context(comptime T: type) type {
             },
         },
         pointer_start_press: Vec = Vec{ 0, 0 },
+        pointer_captured: bool = false,
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
         root_layout: Layout = .Fill,
@@ -321,43 +322,43 @@ pub fn Context(comptime T: type) type {
                 "{s:^16}|{s:^16}|{s:^8}|{s:^8}",
                 .{ "layout", "datatype", "children", "hidden" },
             );
-            defer this.alloc.free(header);
+            defer alloc.free(header);
             print(header);
             for (this.nodes.items) |node| {
                 const typename: [*:0]const u8 = @tagName(node.layout);
                 const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
                 const log = try std.fmt.allocPrint(
-                    this.alloc,
+                    alloc,
                     "{s:<16}|{s:^16}|{:^8}|{:^8}",
                     .{ typename, dataname, node.children, node.hidden },
                 );
-                defer this.alloc.free(log);
+                defer alloc.free(log);
                 print(log);
             }
         }
 
-        pub fn print_debug(this: @This(), print: fn ([]const u8) void) void {
+        pub fn print_debug(this: @This(), alloc: Allocator, print: fn ([]const u8) void) void {
             var child_iter = this.get_root_iter();
             while (child_iter.next()) |childi| {
-                this.print_recursive(print, childi, 0);
+                this.print_recursive(alloc, print, childi, 0);
             }
         }
 
-        pub fn print_recursive(this: @This(), print: fn ([]const u8) void, index: usize, depth: usize) void {
+        pub fn print_recursive(this: @This(), alloc: Allocator, print: fn ([]const u8) void, index: usize, depth: usize) void {
             const node = this.nodes.items[index];
             const typename: [*:0]const u8 = @tagName(node.layout);
             const dataname: [*:0]const u8 = if (node.data) |data| @tagName(data) else "null";
             const depth_as_bits = @as(u8, 1) << @intCast(u3, depth);
             const log = std.fmt.allocPrint(
-                this.alloc,
+                alloc,
                 "{b:>8}\t{:>16}|{s:<16}|{s:^16}|{:^8}|{:^8}",
                 .{ depth_as_bits, node.handle, typename, dataname, node.children, node.hidden },
             ) catch @panic("yeah");
-            defer this.alloc.free(log);
+            defer alloc.free(log);
             print(log);
             var child_iter = this.get_child_iter(index);
             while (child_iter.next()) |childi| {
-                this.print_recursive(print, childi, depth + 1);
+                this.print_recursive(alloc, print, childi, depth + 1);
             }
         }
 
@@ -442,8 +443,14 @@ pub fn Context(comptime T: type) type {
             }
             switch (node.event_filter) {
                 .Pass => {},
-                .PassExcept => |except| if (except == event._type) return,
-                .Prevent => return,
+                .PassExcept => |except| if (except == event._type) {
+                    this.pointer_captured = true;
+                    return;
+                },
+                .Prevent => {
+                    this.pointer_captured = true;
+                    return;
+                },
             }
             var parent_iter = this.get_parent_iter(index);
             while (parent_iter.next()) |parent_index| {
@@ -457,11 +464,26 @@ pub fn Context(comptime T: type) type {
                         }
                     }
                 }
+                switch (parent.event_filter) {
+                    .Pass => {},
+                    .PassExcept => |except| if (except == event._type) {
+                        this.pointer_captured = true;
+                        return;
+                    },
+                    .Prevent => {
+                        this.pointer_captured = true;
+                        return;
+                    },
+                }
             }
         }
 
         /// Call this method every time input is recieved
         pub fn update(this: *@This(), inputs: InputData) void {
+            if (this.nodes.items.len == 0) {
+                this.inputs_last = inputs;
+                return;
+            }
             {
                 // Collect info about state
                 const pointer_diff = inputs.pointer.pos - this.inputs_last.pointer.pos;
@@ -472,11 +494,15 @@ pub fn Context(comptime T: type) type {
                     this.pointer_start_press = inputs.pointer.pos;
                 }
                 const drag_threshold = 10 * 10;
-                const pointer_drag = inputs.pointer.left and pointer_move and g.vec.dist_sqr(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
+                const pointer_drag = //
+                    inputs.pointer.left and
+                    pointer_move and
+                    g.vec.dist_sqr(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
 
                 // Iterate backwards until we find an element that contains the pointer, then dispatch
                 // the event. Dispatching will bubble the event to the topmost element.
-                var pointer_captured = false;
+                // var pointer_captured = false;
+                this.pointer_captured = false;
                 var i = this.nodes.items.len - 1;
                 var run = true;
                 while (run) : (i -|= 1) {
@@ -489,11 +515,11 @@ pub fn Context(comptime T: type) type {
                     if (node.hidden) {
                         continue;
                     }
-                    if (g.rect.contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !pointer_captured) {
+                    if (g.rect.contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !this.pointer_captured) {
                         this.nodes.items[i].pointer_over = true;
                         this.nodes.items[i].pointer_pressed = inputs.pointer.left;
                         if (node.event_filter == .Prevent) {
-                            pointer_captured = true;
+                            this.pointer_captured = true;
                         }
                         var pointer_enter = false;
                         // Node now contains the old state
@@ -551,6 +577,7 @@ pub fn Context(comptime T: type) type {
             for (this.nodes.items) |node, i| {
                 this.nodes.items[i] = this.updateFn(node);
             }
+
             this.inputs_last = inputs;
         }
 

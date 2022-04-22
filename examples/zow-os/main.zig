@@ -75,8 +75,19 @@ pub const ZowOS = struct {
     }
 
     pub fn start(this: *@This()) !void {
-        _ = this;
-        _ = try Window.init(&this.window_manager, .{ 20, 20, 40, 40 });
+        var welcome = try Window.init(&this.window_manager, .{ 20, 20, 80, 80 });
+        _ = try this.window_manager.ctx.insert(welcome.canvas, Node.relative().dataValue(.{ .Label = "Welcome!" }));
+        _ = try this.window_manager.ctx.insert(welcome.canvas, Node.relative().dataValue(.{ .Image = &bubbles }));
+    }
+
+    pub fn load(this: *@This()) void {
+        this._load() catch zow4.panic("lol");
+    }
+
+    pub fn _load(this: *@This()) !void {
+        var welcome = try Window.init(&this.window_manager, .{ 20, 20, 80, 80 });
+        _ = try this.window_manager.ctx.insert(welcome.canvas, Node.relative().dataValue(.{ .Label = "Welcome!" }));
+        _ = try this.window_manager.ctx.insert(welcome.canvas, Node.relative().dataValue(.{ .Image = &bubbles }));
     }
 
     pub fn update(this: *@This()) !void {
@@ -92,7 +103,10 @@ pub const WindowManager = struct {
     ctx: Context,
     handle: usize,
     menubar: usize,
-    // fn show_start(_: Node, _: EventData) ?Node {}
+    fn on_start(_: Node, _: EventData) ?Node {
+        zow_os.load();
+        return null;
+    }
     fn init(alloc: std.mem.Allocator) !@This() {
         var ctx = try ui.default.init(alloc);
 
@@ -109,7 +123,7 @@ pub const WindowManager = struct {
         var menu_div = try this.ctx.insert(menubar, Node.hlist().hasBackground(true));
 
         var btn1 = try this.ctx.insert(menu_div, Node.relative().dataValue(.{ .Button = "\x81" }).capturePointer(true));
-        try this.ctx.listen(btn1, .PointerClick, float_show);
+        try this.ctx.listen(btn1, .PointerClick, on_start);
 
         // var btn2 = try ctx.insert(hdiv, Node.relative().dataValue(.{ .Button = "Hide" }).capturePointer(true));
         // try ctx.listen(btn2, .PointerClick, float_hide);
@@ -217,12 +231,12 @@ pub const Window = struct {
     }
     pub fn init(wm: *WindowManager, box: g.AABB) !@This() {
         var win = try wm.ctx.insert(wm.handle, Node.anchor(.{ 0, 0, 0, 0 }, g.aabb.as_rect(box)).minSize(g.aabb.size(box)));
-        var vlist = try wm.ctx.insert(win, Node.vlist().hasBackground(true));
         const barsize = 14;
-        var dragbar = try wm.ctx.insert(win, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, barsize }).minSize(.{ 32, barsize }).hasBackground(true).capturePointer(true).eventFilter(.{.PassExcept = .PointerClick}));
+        var dragbar = try wm.ctx.insert(win, Node.anchor(.{ 0, 0, 100, 0 }, .{ 0, 0, 0, barsize }).minSize(.{ 32, barsize }).hasBackground(true).capturePointer(true).eventFilter(.{ .PassExcept = .PointerClick }));
         var menubar = try wm.ctx.insert(dragbar, Node.hlist().minSize(.{ 32, barsize }).hasBackground(true));
         _ = try wm.ctx.insert(menubar, Node.relative().dataValue(.{ .Button = "X" }).capturePointer(true).eventFilter(.Pass));
-        var canvas = try wm.ctx.insert(vlist, Node.fill().capturePointer(true).eventFilter(.Prevent));
+        var space = try wm.ctx.insert(win, Node.anchor(.{ 0, 0, 100, 100 }, .{ 0, barsize, 0, 0 }));
+        var canvas = try wm.ctx.insert(space, Node.vlist().capturePointer(true).eventFilter(.Prevent));
 
         try wm.ctx.listen(win, .PointerPress, float_pressed);
         try wm.ctx.listen(win, .PointerRelease, float_release);
