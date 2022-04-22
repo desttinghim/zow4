@@ -1,33 +1,5 @@
 //! # Input
 //! This is an input library for WASM4.
-test "usage" {
-    // Import this file as a namespace
-    const Input = @This();
-    // In loop
-    if (Input.btnp(.one, .left)) {
-        // gamepad 1, left button just pressed
-    }
-    if (Input.btnr(.two, .right)) {
-        // gampad 2, right button just released
-    }
-    if (Input.btn(.three, .up)) {
-        // gamepad 3, up button pressed
-    }
-
-    if (Input.mouse(.left)) {
-        // left mouse button pressed
-    }
-    if (Input.mousep(.right)) {
-        // left mouse button just pressed
-    }
-    if (Input.mouser(.middle)) {
-        // middle mouse button just released
-    }
-    _ = Input.mousepos();
-
-    Input.update();
-}
-
 const w4 = @import("wasm4");
 const geom = @import("geometry.zig");
 
@@ -133,4 +105,32 @@ pub fn mousepos() geom.Vec2 {
 /// Returns a vector with a diff of the mouse position
 pub fn mousediff() geom.Vec2 {
     return mousepos_previous - mousepos();
+}
+
+test "usage" {
+    // Import this file as a namespace
+    const Input = @This();
+    // In loop
+    if (Input.btnp(.one, .left)) {
+        // gamepad 1, left button just pressed
+    }
+    if (Input.btnr(.two, .right)) {
+        // gampad 2, right button just released
+    }
+    if (Input.btn(.three, .up)) {
+        // gamepad 3, up button pressed
+    }
+
+    if (Input.mouse(.left)) {
+        // left mouse button pressed
+    }
+    if (Input.mousep(.right)) {
+        // left mouse button just pressed
+    }
+    if (Input.mouser(.middle)) {
+        // middle mouse button just released
+    }
+    _ = Input.mousepos();
+
+    Input.update();
 }

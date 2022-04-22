@@ -490,6 +490,8 @@ pub fn Context(comptime T: type) type {
                 const pointer_move = @reduce(.Or, pointer_diff != Vec{ 0, 0 });
                 const pointer_press = !this.inputs_last.pointer.left and inputs.pointer.left;
                 const pointer_release = this.inputs_last.pointer.left and !inputs.pointer.left;
+                const secondary_press = !this.inputs_last.pointer.right and inputs.pointer.right;
+                const secondary_release = this.inputs_last.pointer.right and !inputs.pointer.right;
                 if (pointer_press) {
                     this.pointer_start_press = inputs.pointer.pos;
                 }
@@ -533,11 +535,11 @@ pub fn Context(comptime T: type) type {
                             event_data._type = .PointerMove;
                             this.dispatch_raw(i, event_data);
                         }
-                        if (pointer_release) {
+                        if (pointer_release or secondary_release) {
                             event_data._type = .PointerRelease;
                             this.dispatch_raw(i, event_data);
                         }
-                        if (pointer_press) {
+                        if (pointer_press or secondary_press) {
                             event_data._type = .PointerPress;
                             this.dispatch_raw(i, event_data);
                         }

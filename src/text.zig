@@ -7,6 +7,7 @@ pub const Document = struct {
     lines: i32,
 
     pub fn fromText(string: []const u8) @This() {
+        @setEvalBranchQuota(10_000);
         var tokiter = std.mem.split(u8, string, "\n");
         var i: usize = 0;
         var maxline: usize = 0;
