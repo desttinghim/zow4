@@ -10,71 +10,6 @@ const Rect = g.Rect;
 
 const Allocator = std.mem.Allocator;
 
-/// Mimics the array list api, but operates on a fixed slice that is passed in
-fn SliceList(comptime T: type) type {
-    return struct {
-        items: []T,
-        capacity: []T,
-
-        pub fn init(buffer: []u8) @This() {
-            const start = std.mem.alignPointer(buffer.ptr, @alignOf(T)).?; //orelse return error.OutOfMemory;
-            const ptr = @ptrCast([*]T, @alignCast(@alignOf(T), start));
-            const items = ptr[0..1];
-            return @This(){
-                .items = items,
-                .capacity = ptr[0..@divTrunc(buffer.len, @alignOf(T))],
-            };
-        }
-
-        /// Insert `item` at index `n`. Moves `list[n .. list.len]`
-        /// to higher indices to make room.
-        /// This operation is O(N).
-        pub fn insert(this: *@This(), n: usize, item: T) Allocator.Error!void {
-            if (this.items.len >= this.capacity.len) return error.OutOfMemory;
-            this.items.len += 1;
-
-            std.mem.copyBackwards(T, this.items[n + 1 .. this.items.len], this.items[n .. this.items.len - 1]);
-            this.items[n] = item;
-        }
-
-        /// Extend the list by 1 element.
-        pub fn append(this: *@This(), item: T) Allocator.Error!void {
-            if (this.items.len >= this.capacity.len) return error.OutOfMemory;
-            this.items.len += 1;
-            this.items[this.items.len - 1] = item;
-        }
-
-        /// Removes the element at the specified index and returns it.
-        /// The empty slot is filled from the end of the list.
-        /// Invalidates pointers to last element.
-        /// This operation is O(1).
-        pub fn swapRemove(this: *@This(), i: usize) T {
-            if (this.items.len - 1 == i) return this.pop();
-
-            const old_item = this.items[i];
-            this.items[i] = this.pop();
-            return old_item;
-        }
-
-        /// Remove and return the last element from the list.
-        /// Asserts the list has at least one item.
-        /// Invalidates pointers to last element.
-        pub fn pop(this: *@This()) T {
-            const val = this.items[this.items.len - 1];
-            this.items.len -= 1;
-            return val;
-        }
-
-        /// Reduce length to `new_len`.
-        /// Invalidates pointers to elements `items[new_len..]`.
-        /// Keeps capacity the same.
-        pub fn shrinkRetainingCapacity(this: *@This(), new_len: usize) void {
-            std.debug.assert(new_len <= this.items.len);
-            this.items.len = new_len;
-        }
-    };
-}
-
 const List = std.ArrayList;
 
 pub const Event = enum {
@@ -180,8 +115,10 @@ pub fn Context(comptime T: type) type {
         pub const PaintFn = fn (Node) void;
         pub const SizeFn = fn (T) Vec;
 
+        const Self = @This();
+
         pub const Listener = struct {
-            const Fn = fn (Node, EventData) ?Node;
+            const Fn = fn (*Self, Node, EventData) ?Node;
             handle: usize,
             event: Event,
             callback: Fn,
@@ -435,7 +372,7 @@ pub fn Context(comptime T: type) type {
             const node = this.nodes.items[index];
             for (this.listeners.items) |listener| {
                 if (listener.handle == node.handle and event._type == listener.event) {
-                    if (listener.callback(node, event)) |new_node| {
+                    if (listener.callback(this, node, event)) |new_node| {
                         this.nodes.items[index] = new_node;
                         this.modified = true;
                     }
@@ -458,7 +395,7 @@ pub fn Context(comptime T: type) type {
                 // TODO: filter here as well
                 for (this.listeners.items) |listener| {
                     if (listener.handle == parent.handle and event._type == listener.event) {
-                        if (listener.callback(parent, event)) |new_node| {
+                        if (listener.callback(this, parent, event)) |new_node| {
                             this.nodes.items[parent_index] = new_node;
                             this.modified = true;
                         }
@@ -818,6 +755,9 @@ pub fn Context(comptime T: type) type {
         pub fn set_node(this: *@This(), node: Node) bool {
             if (this.get_index_by_handle(node.handle)) |i| {
                 this.nodes.items[i] = node;
+                if (node.data) |data| {
+                    this.nodes.items[i].min_size = this.sizeFn(data);
+                }
                 this.modified = true;
                 return true;
             }
@@ -862,6 +802,32 @@ pub fn Context(comptime T: type) type {
                 // one
                 if (i + node.children >= id) return i;
                 if (i == 0) break;
+            }
+            return null;
+        }
+
+        pub fn get_ancestor(this: @This(), handle: usize, ancestor_num: usize) ?Node {
+            if (this.get_index_by_handle(handle)) |index| {
+                var i: usize = 0;
+                var parent_iter = this.get_parent_iter(index);
+                while(parent_iter.next()) |parent| : (i += 1) {
+                    if (i == ancestor_num) {
+                        return this.nodes.items[parent];
+                    }
+                }
+            }
+            return null;
+        }
+
+        pub fn get_ancestor_id(this: @This(), handle: usize, ancestor_num: usize) ?usize {
+            if (this.get_index_by_handle(handle)) |index| {
+                var i = 0;
+                var parent_iter = this.get_parent_iter(index);
+                while(parent_iter.next()) |parent| {
+                    if (i == ancestor_num) {
+                        return parent;
+                    }
+                }
             }
             return null;
         }
