@@ -73,32 +73,6 @@ pub fn text(string: []const u8, pos: geom.Vec2) void {
     w4.textUtf8(string.ptr, string.len, pos[0], pos[1]);
 }
 
-/// Draws a string in a miniature form, with 1 pixel equal to 1 character.
-pub fn text_mini(string: []const u8, pos: geom.Vec2, lines: ?usize) void {
-    var x = pos[0];
-    var y = pos[1];
-    var line: usize = 0;
-    for (string) |char| {
-        switch (Text.get_char_draw_type(char)) {
-            .Space => {
-                x += 1;
-            },
-            .Character => {
-                pixel(x, y);
-                x += 1;
-            },
-            .Newline => {
-                line += 1;
-                if (lines) |l| {
-                    if (line == l) return;
-                }
-                x = pos[0];
-                y += 1;
-            },
-        }
-    }
-}
-
 pub const Color = enum(u16) {
     Transparent = 0,
     Light = 1,
