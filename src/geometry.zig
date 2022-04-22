@@ -119,6 +119,14 @@ pub const rect = struct {
     ///////////////////////////////////////
     // i32 integer backed rect functions //
     ///////////////////////////////////////
+    pub fn as_aabb(rectangle: Rect) AABB {
+        return AABB{
+            rectangle[0],
+            rectangle[1],
+            rectangle[2] - rectangle[0],
+            rectangle[3] - rectangle[1],
+        };
+    }
 
     pub fn top(rectangle: Rect) i32 {
         return rectangle[1];
