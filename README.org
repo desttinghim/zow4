@@ -1,9 +1,4 @@
 #+title: README
 
-* WASM4 Zig Libs
-These are some simple libraries for building games using WASM4. My specific goal is to enable quick startup on Jam games.
-** Usage
-Copy this repository into your project as =/lib/w4j/= and add this to your build.zig.
-#+begin_src
-
-#+end_src
+* ZOW4
+Library for quickly making games on WASM4. Still WIP

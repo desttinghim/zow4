@@ -191,7 +191,33 @@ pub const BlittyError = error{
     UnsupportedHeight,
 };
 
+const BitmapHeader = struct {
+    // 0x00
+    magic_bytes: u16,
+    // 0x02
+    size: u32,
+    // 0x06
+    reserved: u32,
+    // 0x0A
+    offset: u32,
+};
+
+const InfoHeader = struct {
+    size: u32,
+    width: u32,
+    planes: u16,
+    bpp: u16,
+    compression: u32,
+    XpixelsPerM: u32,
+    YpixelsPerM: u32,
+    ColorsUsed: u32,
+    ImportantColors: u32,
+};
+
+const ColorTable = struct { r: u8, g: u8, b: u8, reserved: u8 };
+
 pub fn load_bitmap(comptime monoBmp: []const u8) BlittyError!Bitmap {
+    @setEvalBranchQuota(100_000);
     if (!std.mem.eql(u8, "BM", monoBmp[0x0..0x2])) {
         return BlittyError.NotABitmap;
     }
