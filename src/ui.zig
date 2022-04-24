@@ -239,8 +239,8 @@ pub fn Context(comptime T: type) type {
         };
 
         pub fn init(alloc: Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) !@This() {
-            var listenerlist = try List(Listener).initCapacity(alloc, 20);
-            var nodelist = try List(Node).initCapacity(alloc, 20);
+            var listenerlist = try List(Listener).initCapacity(alloc, 40);
+            var nodelist = try List(Node).initCapacity(alloc, 40);
             return @This(){
                 .modified = true,
                 .handle_count = 100,
@@ -360,6 +360,18 @@ pub fn Context(comptime T: type) type {
                     _ = this.listeners.swapRemove(i);
                     break;
                 }
+            }
+        }
+
+        pub fn unlisten_all(this: *@This(), handle: usize) void {
+            var i: usize = this.listeners.items.len - 1;
+            var run = true;
+            while (run) : (i -|= 1) {
+                const listener = this.listeners.items[i];
+                if (listener.handle == handle) {
+                    _ = this.listeners.swapRemove(i);
+                }
+                if (i == 0) run = false;
             }
         }
 
@@ -869,6 +881,12 @@ pub fn Context(comptime T: type) type {
                     const index = this.get_index_by_handle(handle) orelse return;
                     const node = this.nodes.items[index];
                     const count = node.children + 1;
+
+                    var a: usize = 0;
+                    while (a < node.children) : (a += 1) {
+                        const lnode = this.nodes.items[index + a];
+                        this.unlisten_all(lnode.handle);
+                    }
 
                     // Get slice of children and rest
                     const rest_slice = this.nodes.items[index + node.children + 1 ..];
