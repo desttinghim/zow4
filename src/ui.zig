@@ -446,16 +446,15 @@ pub fn Context(comptime T: type) type {
                                 .Pass => {},
                                 .PassExcept => |except| if (except == bubble.event._type) {
                                     this.pointer_captured = true;
-                                    this.bubbling = null;
                                 },
                                 .Prevent => {
                                     this.pointer_captured = true;
-                                    this.bubbling = null;
                                 },
                             }
-                            if (parent.capture_pointer) {
+                            if (parent.capture_pointer and !this.pointer_captured) {
                                 return bubble.event;
                             }
+                            if (this.pointer_captured) break;
                         }
                         this.bubbling = null;
                     }
