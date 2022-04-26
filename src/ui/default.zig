@@ -10,7 +10,7 @@ pub const Context = ui.Context(DefaultUI);
 pub const Node = Context.Node;
 
 pub fn init(alloc: std.mem.Allocator) !Context {
-    return Context.init(alloc, DefaultUI.size, DefaultUI.update, DefaultUI.paint);
+    return Context.init(alloc, DefaultUI.size, DefaultUI.paint);
 }
 
 pub fn update(ui_ctx: *Context) void {

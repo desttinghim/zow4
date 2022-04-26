@@ -14,6 +14,8 @@ var ctx: Context = undefined;
 var counter: isize = 0;
 var counter_handle: usize = undefined;
 var counter_text: []u8 = undefined;
+var btn_increment: usize = 0;
+var btn_decrement: usize = 0;
 
 fn update_label() void {
     if (ctx.get_node(counter_handle)) |node| {
@@ -22,19 +24,9 @@ fn update_label() void {
         counter_text = std.fmt.allocPrint(alloc, "{}", .{counter}) catch zow4.panic("formatting string");
         new_node.data.?.Label = counter_text;
         _ = ctx.set_node(new_node);
+    } else {
+        w4.trace("oops");
     }
-}
-
-fn increment(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
-    counter +|= 1;
-    update_label();
-    return null;
-}
-
-fn decrement(_: ui.default.Node, _: zow4.ui.EventData) ?ui.default.Node {
-    counter -|= 1;
-    update_label();
-    return null;
 }
 
 export fn start() void {
@@ -64,8 +56,7 @@ fn init() !void {
         const hdiv = try ctx.insert(vdiv, Node.hdiv());
 
         const center_dec = try ctx.insert(hdiv, Node.center());
-        const btn_decrement = try ctx.insert(center_dec, Node.relative().dataValue(.{ .Button = "-" }).capturePointer(true));
-        try ctx.listen(btn_decrement, .PointerClick, decrement);
+        btn_decrement = try ctx.insert(center_dec, Node.relative().dataValue(.{ .Button = "-" }).capturePointer(true));
 
         counter = 0;
         counter_text = try std.fmt.allocPrint(alloc, "{}", .{counter});
@@ -73,8 +64,7 @@ fn init() !void {
         counter_handle = try ctx.insert(center_lbl, Node.relative().dataValue(.{ .Label = counter_text }));
 
         const center_inc = try ctx.insert(hdiv, Node.center());
-        const btn_increment = try ctx.insert(center_inc, Node.relative().dataValue(.{ .Button = "+" }).capturePointer(true));
-        try ctx.listen(btn_increment, .PointerClick, increment);
+        btn_increment = try ctx.insert(center_inc, Node.relative().dataValue(.{ .Button = "+" }).capturePointer(true));
     }
 
     // Spcer
@@ -88,7 +78,7 @@ export fn update() void {
 }
 
 fn _update() !void {
-    ctx.update(.{
+    var update_iter = ctx.poll(.{
         .pointer = .{
             .left = input.mouse(.left),
             .right = input.mouse(.right),
@@ -104,6 +94,21 @@ fn _update() !void {
             .reject = input.btn(.one, .z),
         },
     });
+    while (update_iter.next()) |event| {
+        const name = @tagName(event._type);
+        w4.tracef("%s %d %d", name.ptr, event.target, event.current);
+        if (event._type == .PointerClick) {
+            w4.tracef("click inc: %d dec: %d", btn_increment, btn_decrement);
+            if (event.target == btn_increment)  {
+                counter +|= 1;
+                update_label();
+            }
+            if (event.target == btn_decrement) {
+                counter -|= 1;
+                update_label();
+            }
+        }
+    }
     ctx.layout(.{ 0, 0, 160, 160 });
     ctx.paint();
     input.update();
