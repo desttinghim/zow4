@@ -31,6 +31,16 @@ pub const InputData = struct {
     keys: KeyData,
 };
 
+const InputInfo = struct {
+    pointer_diff: g.Vec2,
+    pointer_move: bool,
+    pointer_press: bool,
+    pointer_release: bool,
+    secondary_press: bool,
+    secondary_release: bool,
+    pointer_drag: bool,
+};
+
 pub const PointerData = struct {
     left: bool,
     right: bool,
@@ -99,7 +109,6 @@ pub fn Context(comptime T: type) type {
         reorder_op: ?Reorder,
 
         // User defined functions
-        updateFn: UpdateFn,
         paintFn: PaintFn,
         sizeFn: SizeFn,
 
@@ -111,7 +120,6 @@ pub fn Context(comptime T: type) type {
             BringToFront: usize,
         };
 
-        pub const UpdateFn = fn (Node) Node;
         pub const PaintFn = fn (Node) void;
         pub const SizeFn = fn (T) Vec;
 
@@ -238,7 +246,7 @@ pub fn Context(comptime T: type) type {
             }
         };
 
-        pub fn init(alloc: Allocator, sizeFn: SizeFn, updateFn: UpdateFn, paintFn: PaintFn) !@This() {
+        pub fn init(alloc: Allocator, sizeFn: SizeFn, paintFn: PaintFn) !@This() {
             var listenerlist = try List(Listener).initCapacity(alloc, 40);
             var nodelist = try List(Node).initCapacity(alloc, 40);
             return @This(){
@@ -248,7 +256,6 @@ pub fn Context(comptime T: type) type {
                 .listeners = listenerlist,
                 .reorder_op = null,
                 .sizeFn = sizeFn,
-                .updateFn = updateFn,
                 .paintFn = paintFn,
             };
         }
@@ -427,109 +434,188 @@ pub fn Context(comptime T: type) type {
             }
         }
 
-        /// Call this method every time input is recieved
-        pub fn update(this: *@This(), inputs: InputData) void {
-            if (this.nodes.items.len == 0) {
-                this.inputs_last = inputs;
-                return;
-            }
-            {
-                // Collect info about state
-                const pointer_diff = inputs.pointer.pos - this.inputs_last.pointer.pos;
-                const pointer_move = @reduce(.Or, pointer_diff != Vec{ 0, 0 });
-                const pointer_press = !this.inputs_last.pointer.left and inputs.pointer.left;
-                const pointer_release = this.inputs_last.pointer.left and !inputs.pointer.left;
-                const secondary_press = !this.inputs_last.pointer.right and inputs.pointer.right;
-                const secondary_release = this.inputs_last.pointer.right and !inputs.pointer.right;
-                if (pointer_press) {
-                    this.pointer_start_press = inputs.pointer.pos;
-                }
-                const drag_threshold = 10 * 10;
-                const pointer_drag = //
-                    inputs.pointer.left and
-                    pointer_move and
-                    g.vec.dist_sqr(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
-
-                // Iterate backwards until we find an element that contains the pointer, then dispatch
-                // the event. Dispatching will bubble the event to the topmost element.
-                // var pointer_captured = false;
-                this.pointer_captured = false;
-                var i = this.nodes.items.len - 1;
-                var run = true;
-                while (run) : (i -|= 1) {
-                    const node = this.nodes.items[i];
-                    defer if (i == 0) {
-                        // TODO: store root listeners
-                        // this.dispatch_root(.PointerRelease);
-                        run = false;
-                    };
-                    if (node.hidden) {
-                        continue;
+        const EventIterator = struct {
+            ctx: *Self,
+            current_event: Event = .PointerEnter,
+            run: bool = true,
+            node: Node,
+            index: usize,
+            inputs: InputData,
+            input_info: InputInfo,
+            pub fn next(this: *@This()) ?EventData {
+                const node = this.node;
+                if (node.event_filter == .Pass) return null;
+                while (this.run) {
+                    switch (this.current_event) {
+                        .PointerEnter => {
+                            this.current_event = .PointerMove;
+                            if (!node.pointer_over) return EventData{ ._type = .PointerEnter, .pointer = this.inputs.pointer };
+                        },
+                        .PointerMove => {
+                            this.current_event = .PointerPress;
+                            if (this.input_info.pointer_move) return EventData{ ._type = .PointerMove, .pointer = this.inputs.pointer };
+                        },
+                        .PointerPress => {
+                            this.current_event = .PointerRelease;
+                            if (this.input_info.pointer_press) return EventData{ ._type = .PointerPress, .pointer = this.inputs.pointer };
+                        },
+                        .PointerRelease => {
+                            this.current_event = .PointerClick;
+                            if (this.input_info.pointer_release) return EventData{ ._type = .PointerRelease, .pointer = this.inputs.pointer };
+                        },
+                        .PointerClick => {
+                            this.run = false;
+                            const nptr = &this.ctx.nodes.items[this.index].pointer_state;
+                            switch (node.pointer_state) {
+                                .Open => {
+                                    nptr.* = .Hover;
+                                    if (this.input_info.pointer_press) nptr.* = .Press;
+                                },
+                                .Hover => {
+                                    if (this.input_info.pointer_press) nptr.* = .Press;
+                                },
+                                .Press => {
+                                    if (this.input_info.pointer_release) nptr.* = .Click;
+                                    if (this.input_info.pointer_drag) nptr.* = .Drag;
+                                },
+                                .Drag => {
+                                    if (this.input_info.pointer_release) nptr.* = .Hover;
+                                },
+                                .Click => {
+                                    nptr.* = .Open;
+                                    return EventData{ ._type = .PointerClick, .pointer = this.inputs.pointer };
+                                },
+                            }
+                        },
+                        else => {
+                            this.run = false;
+                            return null;
+                        },
                     }
-                    if (g.rect.contains(node.bounds, inputs.pointer.pos) and node.capture_pointer and !this.pointer_captured) {
-                        this.nodes.items[i].pointer_over = true;
-                        this.nodes.items[i].pointer_pressed = inputs.pointer.left;
-                        if (node.event_filter == .Prevent) {
-                            this.pointer_captured = true;
+                }
+                return null;
+            }
+        };
+        const drag_threshold = 10 * 10;
+        pub const UpdateIterator = struct {
+            ctx: *Self,
+            // Running variables
+            index: usize,
+            run: bool = true,
+            pointer_captured: bool = false,
+            bubbling: ?struct {iter: ParentIter, event: EventData} = null,
+            event_iter: ?EventIterator = null,
+            // Defined at beginning of loop
+            inputs: InputData,
+            input_info: InputInfo,
+
+            pub fn next(this: *@This()) ?EventData {
+                if (!this.run) return null;
+                while (this.run) {
+                    if (this.bubbling) |*bubble| {
+                        while (bubble.iter.next()) |parent_index| {
+                            const parent = this.ctx.nodes.items[parent_index];
+                            switch (parent.event_filter) {
+                                .Pass => {},
+                                .PassExcept => |except| if (except == bubble.event._type) {
+                                    this.pointer_captured = true;
+                                    this.bubbling = null;
+                                },
+                                .Prevent => {
+                                    this.pointer_captured = true;
+                                    this.bubbling = null;
+                                },
+                            }
+                            if (parent.capture_pointer) {
+                                return bubble.event;
+                            }
                         }
-                        var pointer_enter = false;
-                        // Node now contains the old state
-                        var event_data = EventData{ ._type = .PointerEnter, .pointer = inputs.pointer };
-                        if (!node.pointer_over) {
-                            event_data._type = .PointerEnter;
-                            this.dispatch_raw(i, event_data);
-                            pointer_enter = true;
+                        this.bubbling = null;
+                    }
+                    if (this.event_iter) |*event_iter| {
+                        if (event_iter.next()) |event_data| {
+                            switch (event_data._type) {
+                                .PointerMove, .PointerPress, .PointerRelease, .PointerClick => {
+                                    if (this.ctx.nodes.items[this.index].event_filter != .Pass) {
+                                        this.pointer_captured = true;
+                                    } else {
+                                        this.bubbling = .{
+                                            .iter = this.ctx.get_parent_iter(this.index),
+                                            .event = event_data,
+                                        };
+                                    }
+                                },
+                                .PointerEnter, .PointerLeave => {
+                                    if (this.ctx.nodes.items[this.index].event_filter != .Pass) {
+                                        this.pointer_captured = true;
+                                    }
+                                },
+                            }
+                            return event_data;
                         }
-                        if (pointer_move) {
-                            event_data._type = .PointerMove;
-                            this.dispatch_raw(i, event_data);
+                        this.index -|= 1;
+                        this.event_iter = null;
+                        if (this.index == 0) {
+                            this.run = false;
+                            return null;
                         }
-                        if (pointer_release or secondary_release) {
-                            event_data._type = .PointerRelease;
-                            this.dispatch_raw(i, event_data);
-                        }
-                        if (pointer_press or secondary_press) {
-                            event_data._type = .PointerPress;
-                            this.dispatch_raw(i, event_data);
-                        }
-                        const nptr = &this.nodes.items[i].pointer_state;
-                        switch (node.pointer_state) {
-                            .Open => {
-                                if (pointer_enter) nptr.* = .Hover;
-                                if (pointer_press) nptr.* = .Press;
-                            },
-                            .Hover => {
-                                if (pointer_press) nptr.* = .Press;
-                            },
-                            .Press => {
-                                if (pointer_release) nptr.* = .Click;
-                                if (pointer_drag) nptr.* = .Drag;
-                            },
-                            .Drag => {
-                                if (pointer_release) nptr.* = .Hover;
-                            },
-                            .Click => {
-                                event_data._type = .PointerClick;
-                                this.dispatch_raw(i, event_data);
-                                nptr.* = .Open;
-                            },
-                        }
+                    }
+
+                    const node = this.ctx.nodes.items[this.index];
+                    if (g.rect.contains(node.bounds, this.inputs.pointer.pos) and node.capture_pointer and !this.ctx.pointer_captured) {
+                        this.ctx.nodes.items[this.index].pointer_over = true;
+                        this.ctx.nodes.items[this.index].pointer_pressed = this.inputs.pointer.left;
+                        this.event_iter = .{ .index = this.index, .ctx = this.ctx, .node = node, .inputs = this.inputs, .input_info = this.input_info };
                     } else {
-                        this.nodes.items[i].pointer_over = false;
-                        this.nodes.items[i].pointer_pressed = false;
-                        if (node.pointer_over) {
-                            this.nodes.items[i].pointer_state = .Open;
-                            this.dispatch_raw(i, .{ ._type = .PointerLeave, .pointer = inputs.pointer });
+                        this.ctx.nodes.items[this.index].pointer_over = false;
+                        this.ctx.nodes.items[this.index].pointer_pressed = false;
+                        this.index -|= 1;
+                        if (this.index == 0) {
+                            this.run = false;
+                            return null;
+                        }
+                        if (node.capture_pointer and node.pointer_over) {
+                            return EventData{ ._type = .PointerLeave, .pointer = this.inputs.pointer };
                         }
                     }
                 }
+                return null;
             }
+        };
 
-            for (this.nodes.items) |node, i| {
-                this.nodes.items[i] = this.updateFn(node);
+        /// Pass inputs, receive UI events
+        pub fn poll(this: *@This(), inputs: InputData) UpdateIterator {
+            // Collect info about state
+            const pointer_diff = inputs.pointer.pos - this.inputs_last.pointer.pos;
+            const pointer_move = @reduce(.Or, pointer_diff != Vec{ 0, 0 });
+            const pointer_press = !this.inputs_last.pointer.left and inputs.pointer.left;
+            if (pointer_press) {
+                this.pointer_start_press = inputs.pointer.pos;
             }
-
-            this.inputs_last = inputs;
+            const pointer_release = this.inputs_last.pointer.left and !inputs.pointer.left;
+            const secondary_press = !this.inputs_last.pointer.right and inputs.pointer.right;
+            const secondary_release = this.inputs_last.pointer.right and !inputs.pointer.right;
+            const pointer_drag = //
+                inputs.pointer.left and
+                pointer_move and
+                g.vec.dist_sqr(this.pointer_start_press, inputs.pointer.pos) > drag_threshold;
+            var input_info = InputInfo{
+                .pointer_diff = pointer_diff,
+                .pointer_move = pointer_move,
+                .pointer_press = pointer_press,
+                .pointer_release = pointer_release,
+                .secondary_press = secondary_press,
+                .secondary_release = secondary_release,
+                .pointer_drag = pointer_drag,
+            };
+            this.pointer_captured = false;
+            var iter = UpdateIterator{
+                .ctx = this,
+                .index = this.nodes.items.len - 1,
+                .inputs = inputs,
+                .input_info = input_info,
+            };
+            return iter;
         }
 
         pub fn paint(this: *@This()) void {
@@ -822,7 +908,7 @@ pub fn Context(comptime T: type) type {
             if (this.get_index_by_handle(handle)) |index| {
                 var i: usize = 0;
                 var parent_iter = this.get_parent_iter(index);
-                while(parent_iter.next()) |parent| : (i += 1) {
+                while (parent_iter.next()) |parent| : (i += 1) {
                     if (i == ancestor_num) {
                         return this.nodes.items[parent];
                     }
@@ -835,7 +921,7 @@ pub fn Context(comptime T: type) type {
             if (this.get_index_by_handle(handle)) |index| {
                 var i = 0;
                 var parent_iter = this.get_parent_iter(index);
-                while(parent_iter.next()) |parent| {
+                while (parent_iter.next()) |parent| {
                     if (i == ancestor_num) {
                         return parent;
                     }
