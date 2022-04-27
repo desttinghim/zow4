@@ -99,7 +99,6 @@ pub fn Context(comptime T: type) type {
             },
         },
         pointer_start_press: Vec = Vec{ 0, 0 },
-        pointer_captured: bool = false,
         /// A monotonically increasing integer assigning new handles
         handle_count: usize,
         root_layout: Layout = .Fill,
@@ -340,7 +339,7 @@ pub fn Context(comptime T: type) type {
             index: usize,
             inputs: InputData,
             input_info: InputInfo,
-            pub fn init(ctx: *Self, index: usize, node: Node, inputs: InputData, info: InputInfo) ?@This() {
+            pub fn init(ctx: *Self, index: usize, node: Node, inputs: InputData, info: InputInfo, pointer_captured: bool) ?@This() {
                 var this = @This(){
                     .ctx = ctx,
                     .node = node,
@@ -348,7 +347,7 @@ pub fn Context(comptime T: type) type {
                     .inputs = inputs,
                     .input_info = info,
                 };
-                if (g.rect.contains(node.bounds, this.inputs.pointer.pos) and node.capture_pointer and !this.ctx.pointer_captured) {
+                if (g.rect.contains(node.bounds, this.inputs.pointer.pos) and node.capture_pointer and !pointer_captured) {
                     this.ctx.nodes.items[this.index].pointer_over = true;
                     this.ctx.nodes.items[this.index].pointer_pressed = this.inputs.pointer.left;
                 } else {
@@ -382,11 +381,11 @@ pub fn Context(comptime T: type) type {
                         },
                         .PointerPress => {
                             this.current_event = .PointerRelease;
-                            if (this.input_info.pointer_press) return this.get_event(.PointerPress);
+                            if (this.input_info.pointer_press or this.input_info.secondary_press) return this.get_event(.PointerPress);
                         },
                         .PointerRelease => {
                             this.current_event = .PointerClick;
-                            if (this.input_info.pointer_release) return this.get_event(.PointerRelease);
+                            if (this.input_info.pointer_release or this.input_info.secondary_release) return this.get_event(.PointerRelease);
                         },
                         .PointerClick => {
                             this.run = false;
@@ -451,7 +450,7 @@ pub fn Context(comptime T: type) type {
                                     this.pointer_captured = true;
                                 },
                             }
-                            if (parent.capture_pointer and !this.pointer_captured) {
+                            if (parent.capture_pointer) {
                                 return bubble.event;
                             }
                             if (this.pointer_captured) break;
@@ -489,7 +488,7 @@ pub fn Context(comptime T: type) type {
                     }
 
                     const node = this.ctx.nodes.items[this.index];
-                    this.event_iter = EventIterator.init(this.ctx, this.index, node, this.inputs, this.input_info);
+                    this.event_iter = EventIterator.init(this.ctx, this.index, node, this.inputs, this.input_info, this.pointer_captured);
                 }
                 return null;
             }
@@ -520,7 +519,6 @@ pub fn Context(comptime T: type) type {
                 .secondary_release = secondary_release,
                 .pointer_drag = pointer_drag,
             };
-            this.pointer_captured = false;
             var iter = UpdateIterator{
                 .ctx = this,
                 .index = this.nodes.items.len - 1,
