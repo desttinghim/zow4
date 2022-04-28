@@ -136,7 +136,7 @@ pub fn build(b: *std.build.Builder) !void {
             "dep/wasm4/runtimes/native/src/apu.c",
             "dep/wasm4/runtimes/native/src/framebuffer.c",
             "dep/wasm4/runtimes/native/src/runtime.c",
-          },
+        },
         &.{},
     );
     wasm4_exe.step.dependOn(&wasm4_repo.step);
@@ -152,6 +152,7 @@ pub fn build(b: *std.build.Builder) !void {
         .exec_path = .{ .path = exec_path },
         .cart_path = counter.getOutputSource(),
         .output_name = "wasm4-counter",
+        .title = "Counter",
     });
     counter_bundle.step.dependOn(&wasm4_exe.step);
     counter_bundle.step.dependOn(&counter.step);

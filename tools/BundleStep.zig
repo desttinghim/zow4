@@ -11,35 +11,25 @@ builder: *std.build.Builder,
 cart_path: std.build.FileSource,
 exec_path: std.build.FileSource,
 output_name: []const u8,
-
+title: []const u8,
 
 pub fn create(b: *std.build.Builder, opt: struct {
     cart_path: std.build.FileSource,
     exec_path: std.build.FileSource,
     output_name: []const u8,
+    title: []const u8,
 }) *@This() {
     var result = b.allocator.create(BundleStep) catch @panic("memory");
-    result.* = BundleStep {
+    result.* = BundleStep{
         .step = std.build.Step.init(.custom, "bundle a wasm4 cart with the native wasm4 runtime", b.allocator, make),
         .builder = b,
         .cart_path = opt.cart_path,
         .exec_path = opt.exec_path,
-        .output_name = opt.output_name
+        .output_name = opt.output_name,
+        .title = opt.title,
     };
+    // result.builder.installBinFile(opt.output_name, opt.output_name);
     return result;
-    // const bundler = b.addExecutable(opt.executable_name, opt.src_path);
-    // {
-    //     bundler.setTarget(b.standardTargetOptions(.{}));
-    //     bundler.install();
-    // }
-    // const run_bundler = bundler.run();
-    // run_bundler.step.dependOn(b.getInstallStep());
-    // {
-    //     run_bundler.addFileSourceArg(.{.path = "lib/wasm4/runtimes/native/build/wasm4"});
-    //     run_bundler.addArtifactArg(dearPrincess);
-    //     // const bundled_exe_path = b.getInstallPath(.bin, "wasm4-linux");
-    //     run_bundler.addArg(b.getInstallPath(.bin, "wasm4-linux"));
-    // }
 }
 
 const FileFooter = extern struct {
@@ -58,17 +48,19 @@ fn make(step: *std.build.Step) !void {
 
     const exe_src = this.exec_path.getPath(this.builder);
     const cart_src = this.cart_path.getPath(this.builder);
-    const output = this.output_name;
+    // const output = this.output_name;
+    const output = this.builder.getInstallPath(.bin, this.output_name);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+    const cwd = std.fs.cwd();
 
-    const cart_file = try std.fs.openFileAbsolute(cart_src, .{});
+    const cart_file = try cwd.openFile(cart_src, .{});
     defer cart_file.close();
     const cart = try cart_file.readToEndAlloc(allocator, 1 * MB);
     defer allocator.free(cart);
 
-    const exe_file = try std.fs.openFileAbsolute(exe_src, .{});
+    const exe_file = try cwd.openFile(exe_src, .{});
     defer exe_file.close();
     const exe = try exe_file.readToEndAlloc(allocator, 10 * MB);
     defer allocator.free(exe);
@@ -86,12 +78,14 @@ fn make(step: *std.build.Step) !void {
         .cartLength = @truncate(u32, cart.len),
     };
 
-    _ = try std.fmt.bufPrintZ(&footer.title, "Dear Princess", .{});
+    _ = try std.fmt.bufPrintZ(&footer.title, "{s}", .{this.title});
 
     try writer.writeStruct(footer);
 
-    const out_file = try std.fs.createFileAbsolute(output, .{});
-    defer out_file.close();
-    _ = try out_file.write(data.items);
-    // out_file.chmod(.executable);
+    std.log.warn("{s}", .{output});
+    cwd.makePath(this.builder.getInstallPath(.bin, "")) catch |e| switch (e) {
+        error.PathAlreadyExists => {},
+        else => return e,
+    };
+    try cwd.writeFile(output, data.items);
 }
