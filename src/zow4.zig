@@ -13,6 +13,7 @@ pub const input = @import("input.zig");
 pub const draw = @import("draw.zig");
 pub const text = @import("text.zig");
 pub const mem = @import("mem.zig");
+pub const scene = @import("scene.zig");
 pub const ui = struct {
     pub usingnamespace @import("ui.zig");
     pub const default = @import("ui/default.zig");

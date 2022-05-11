@@ -179,8 +179,8 @@ fn run(builder: *std.build.Builder, argv: []const []const u8) !void {
         std.log.info("[RUN] {s}", .{msg.items});
     }
 
-    const child = try std.ChildProcess.init(argv, builder.allocator);
-    defer child.deinit();
+    var child = std.ChildProcess.init(argv, builder.allocator);
+    // defer child.deinit();
 
     child.stdin_behavior = .Ignore;
     child.stdout_behavior = .Inherit;

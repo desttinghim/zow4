@@ -98,6 +98,10 @@ pub fn build(b: *std.build.Builder) !void {
     // try addWasm4RunStep(b, "run-zowOS", zowOS);
     // const zowOS_opt = try addWasmOpt(b, "zowOS", zowOS);
 
+    const scene = try addWasm4Cart(b, "scene", "examples/scene.zig");
+    scene.addPackage(pkgs.zow4);
+    try addWasm4RunStep(b, "run-scene", scene);
+
     const counter = try addWasm4Cart(b, "counter", "examples/counter.zig");
     counter.addPackage(pkgs.zow4);
     try addWasm4RunStep(b, "run-counter", counter);
@@ -166,11 +170,14 @@ fn tests(b: *std.build.Builder, mode: std.builtin.Mode) !void {
     input_tests.setBuildMode(mode);
     input_tests.addPackage(pkgs.wasm4);
 
-    const heap_tests = b.addTest("src/heap.zig");
-    heap_tests.setBuildMode(mode);
-    heap_tests.addPackage(pkgs.wasm4);
+    const build_tests = b.addTest("tools/BundleHTMLStep.zig");
+
+    // const heap_tests = b.addTest("src/heap.zig");
+    // heap_tests.setBuildMode(mode);
+    // heap_tests.addPackage(pkgs.wasm4);
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&input_tests.step);
-    test_step.dependOn(&heap_tests.step);
+    test_step.dependOn(&build_tests.step);
+    // test_step.dependOn(&heap_tests.step);
 }

@@ -82,7 +82,6 @@ fn make(step: *std.build.Step) !void {
 
     try writer.writeStruct(footer);
 
-    std.log.warn("{s}", .{output});
     cwd.makePath(this.builder.getInstallPath(.bin, "")) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,

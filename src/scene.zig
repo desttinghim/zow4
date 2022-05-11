@@ -1,108 +1,109 @@
-//! Scene
 const std = @import("std");
+const StackAllocator = @import("mem.zig").StackAllocator;
 
-const test1 = struct {
-    const scene2 = Scene(test2);
-    var manager: *SceneManager = undefined;
-    pub fn start(scene_manager: *SceneManager) void {
-        manager = scene_manager;
-        std.log.info("Test 1 Start", .{});
+pub fn Manager(comptime Context: type, comptime Scenes: []const type) type {
+    comptime var scene_enum: std.builtin.Type.Enum = std.builtin.Type.Enum{
+        .layout = .Auto,
+        .tag_type = usize,
+        .fields = &.{},
+        .decls = &.{},
+        .is_exhaustive = false,
+    };
+    inline for (Scenes) |t, i| {
+        scene_enum.fields = scene_enum.fields ++ [_]std.builtin.Type.EnumField{.{.name = @typeName(t), .value = i}};
     }
-    pub fn update() void {
-        manager.push(scene2);
-        std.log.info("Test 1 Update", .{});
-    }
-    pub fn end() void {
-        std.log.info("Test 1 End", .{});
-    }
-};
+    const SceneEnum = @Type(.{.Enum = scene_enum});
+    return struct {
+        sa: *StackAllocator,
+        ctx: *Context,
+        scenes: std.ArrayList(ScenePtr),
 
-const test2 = struct {
-    var manager: *SceneManager = undefined;
-    pub fn start(scene_manager: *SceneManager) void {
-        manager = scene_manager;
-        std.log.info("Test 2 Start", .{});
-    }
-    pub fn update() void {
-        std.log.info("Test 2 Update", .{});
-        manager.pop();
-    }
-    pub fn end() void {
-        std.log.info("Test 2 End", .{});
-    }
-};
+        pub const Scene = SceneEnum;
+        const ScenePtr = struct {which: usize, ptr: *anyopaque};
 
-test "usage" {
-    const scene1 = Scene(test1);
-    var scene_manager = SceneManager.init(scene1);
-    scene_manager.run();
-    scene_manager.run();
-    scene_manager.run();
-    scene_manager.pop();
-}
+        pub fn init(ctx: *Context, scene_allocator: *StackAllocator, alloc: std.mem.Allocator) @This() {
+            return @This() {
+                .sa = scene_allocator,
+                .ctx = ctx,
+                .scenes = std.ArrayList(ScenePtr).init(alloc),
+            };
+        }
 
-const SceneManager = @This();
+        pub fn deinit(this: *@This()) void {
+            this.scenes.deinit();
+        }
 
-pub fn Scene(comptime T: anytype) ScenePtrs {
-    if (@hasField(T, "start")) {
-        @compileLog("Scene requires start function", T);
-    }
-    if (@hasField(T, "update")) {
-        @compileLog("Scene requires update function", T);
-    }
-    if (@hasField(T, "end")) {
-        @compileLog("Scene requires end function", T);
-    }
-    return .{
-        .start = @field(T, "start"),
-        .update = @field(T, "update"),
-        .end = @field(T, "end"),
+        pub fn push(this: *@This(), comptime which: SceneEnum) anyerror!*Scenes[@enumToInt(which)] {
+            const i = @enumToInt(which);
+            const scene = try this.sa.allocator().create(Scenes[i]);
+            scene.* = try @field(Scenes[i], "init")(this.ctx);
+            try this.scenes.append(.{.which = i, .ptr = scene});
+            return scene;
+        }
+
+        pub fn pop(this: *@This()) void {
+            const scene = this.scenes.popOrNull() orelse return;
+            inline for (Scenes) |S, i| {
+                if (i == scene.which) {
+                    const ptr = @ptrCast(*S, @alignCast(@alignOf(S), scene.ptr));
+                    @field(S,"deinit")(ptr);
+                    this.sa.allocator().destroy(ptr);
+                }
+                break;
+            }
+        }
+
+        pub fn replace(this: *@This(), comptime which: SceneEnum) anyerror!void  {
+            this.pop();
+            _ = try this.push(which);
+        }
+
+        pub fn tick(this: *@This()) anyerror!void {
+            // if (this.scenes.items.len == 0) return;
+            const scene = this.scenes.items[this.scenes.items.len - 1];
+            inline for (Scenes) |S, i| {
+                if (i == scene.which) {
+                    const ptr = @ptrCast(*S, @alignCast(@alignOf(S), scene.ptr));
+                    try @field(S,"update")(ptr);
+                    break;
+                }
+            } else {
+                return error.NoSuchScene;
+            }
+        }
     };
 }
 
-pub const ScenePtrs = struct {
-    start: fn (*SceneManager) void,
-    update: fn () void,
-    end: fn () void,
-};
 
-scenes: [5]ScenePtrs = undefined,
-current_scene: usize = 0,
+test "Scene Manager" {
+    const Ctx = struct { count: usize };
+    const Example = struct {
+        ctx: *Ctx,
+        fn init(ctx: *Ctx)  @This() {
+            return @This(){
+                .ctx = ctx,
+            };
+        }
+        fn deinit(_: *@This()) void {}
+        fn update(this: *@This())  void {
+            this.ctx.count += 1;
+        }
+    };
+    const SceneManager = Manager(Ctx, &[_]type{Example});
+    var ctx = Ctx{.count = 0};
 
-pub fn init(initial_scene: ScenePtrs) @This() {
-    var this = @This(){};
-    this.scenes[0] = initial_scene;
-    this.scenes[0].start(&this);
-    return this;
-}
+    var heap: [128]u8 = undefined;
+    var sa = StackAllocator.init(&heap);
 
-pub fn run(this: @This()) void {
-    this.scenes[this.current_scene].update();
-}
+    var sm = SceneManager.init(&ctx, &sa, std.testing.allocator);
+    defer sm.deinit();
 
-pub fn push(this: *@This(), scene: ScenePtrs) void {
-    if (this.current_scene < this.scenes.len - 1) {
-        this.current_scene += 1;
-        this.scenes[this.current_scene] = scene;
-        this.scenes[this.current_scene].start(this);
-    } else {
-        @panic("Scenes out of bounds");
-        // return error.OutOfBounds;
-    }
-}
+    const example_ptr = try sm.push(.Example);
+    example_ptr.update();
+    try std.testing.expectEqual(@as(usize, 1), ctx.count);
 
-pub fn replace(this: *@This(), scene: Scene) void {
-    this.scenes[this.current_scene].end();
-    this.scenes[this.current_scene] = scene;
-    this.scenes[this.current_scene].start();
-}
+    sm.tick();
+    try std.testing.expectEqual(@as(usize, 2), ctx.count);
 
-pub fn pop(this: *@This()) void {
-    if (this.current_scene > 0) {
-        this.scenes[this.current_scene].end();
-        this.current_scene -= 1;
-    } else {
-        // This should quit the game in native runtimes
-        @panic("Popped last scene, quitting...");
-    }
+    sm.pop();
 }
