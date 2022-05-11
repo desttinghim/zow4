@@ -49,10 +49,11 @@ const Scene1 = struct {
     }
     pub fn deinit(_: *@This()) void {}
     pub fn update(this: *@This()) !void {
-        w4.text("Hi", 0, 0);
+        w4.text("Scene 1", 80 - 3 * 8, 64);
         var buf: [32]u8 = undefined;
-        const text = try std.fmt.bufPrintZ(&buf, "{}", .{this.counter});
-        w4.text(text.ptr, 80, 80);
+        const text = try std.fmt.bufPrintZ(&buf, "< {} >", .{this.counter});
+        w4.text(text.ptr, 80 - @divTrunc(@intCast(i32, text.len * 8), 2), 80);
+        w4.text("z to push", 80 - 3 * 8, 96);
         if (input.btnp(.one, .left)) {
             this.counter -= 1;
         }
@@ -72,9 +73,10 @@ const Scene2 = struct {
     }
     pub fn deinit(_: *@This()) void {}
     pub fn update(this: *@This()) !void {
-        w4.text("Hello", 0, 0);
+        w4.text("Scene 2", 80 - 3 * 8, 64);
         if (input.btnp(.one, .x)) {
             this.ctx.scenes.pop();
         }
+        w4.text("x to pop", 80 - 3 * 8, 96);
     }
 };
