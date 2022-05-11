@@ -1,5 +1,4 @@
 const std = @import("std");
-const StackAllocator = @import("mem.zig").StackAllocator;
 
 pub fn Manager(comptime Context: type, comptime Scenes: []const type) type {
     comptime var scene_enum: std.builtin.Type.Enum = std.builtin.Type.Enum{
@@ -14,18 +13,18 @@ pub fn Manager(comptime Context: type, comptime Scenes: []const type) type {
     }
     const SceneEnum = @Type(.{.Enum = scene_enum});
     return struct {
-        sa: *StackAllocator,
+        alloc: std.mem.Allocator,
         ctx: *Context,
         scenes: std.ArrayList(ScenePtr),
 
         pub const Scene = SceneEnum;
         const ScenePtr = struct {which: usize, ptr: *anyopaque};
 
-        pub fn init(ctx: *Context, scene_allocator: *StackAllocator, alloc: std.mem.Allocator) @This() {
+        pub fn init( alloc: std.mem.Allocator,ctx: *Context, opt: struct {scene_capacity: usize = 5}) !@This() {
             return @This() {
-                .sa = scene_allocator,
+                .alloc = alloc,
                 .ctx = ctx,
-                .scenes = std.ArrayList(ScenePtr).init(alloc),
+                .scenes = try std.ArrayList(ScenePtr).initCapacity(alloc, opt.scene_capacity),
             };
         }
 
@@ -35,7 +34,7 @@ pub fn Manager(comptime Context: type, comptime Scenes: []const type) type {
 
         pub fn push(this: *@This(), comptime which: SceneEnum) anyerror!*Scenes[@enumToInt(which)] {
             const i = @enumToInt(which);
-            const scene = try this.sa.allocator().create(Scenes[i]);
+            const scene = try this.alloc.create(Scenes[i]);
             scene.* = try @field(Scenes[i], "init")(this.ctx);
             try this.scenes.append(.{.which = i, .ptr = scene});
             return scene;
@@ -47,7 +46,7 @@ pub fn Manager(comptime Context: type, comptime Scenes: []const type) type {
                 if (i == scene.which) {
                     const ptr = @ptrCast(*S, @alignCast(@alignOf(S), scene.ptr));
                     @field(S,"deinit")(ptr);
-                    this.sa.allocator().destroy(ptr);
+                    this.alloc.destroy(ptr);
                 }
                 break;
             }
@@ -92,10 +91,7 @@ test "Scene Manager" {
     const SceneManager = Manager(Ctx, &[_]type{Example});
     var ctx = Ctx{.count = 0};
 
-    var heap: [128]u8 = undefined;
-    var sa = StackAllocator.init(&heap);
-
-    var sm = SceneManager.init(&ctx, &sa, std.testing.allocator);
+    var sm = SceneManager.init(&ctx, std.testing.allocator, .{});
     defer sm.deinit();
 
     const example_ptr = try sm.push(.Example);

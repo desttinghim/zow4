@@ -27,7 +27,7 @@ fn _start() !void {
     ctx = .{
         .fba = fba,
         .alloc = alloc,
-        .scenes = SceneManager.init(&ctx, &stack_allocator, alloc),
+        .scenes = try SceneManager.init(stack_allocator.allocator(), &ctx, .{}),
     };
     _ = try ctx.scenes.push(.Scene1);
 }
